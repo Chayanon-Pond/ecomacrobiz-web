@@ -1,0 +1,7 @@
+# Normalize to LF in the repo and in checkouts (Linux Docker builds, bash scripts).
+* text=auto eol=lf
+*.sh text eol=lf
+*.webp binary
+*.jpg binary
+*.png binary
+*.ico binary

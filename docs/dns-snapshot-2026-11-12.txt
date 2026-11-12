@@ -1,0 +1,67 @@
+# Public DNS snapshot for ecomacrobiz.com
+# Taken (UTC): 2026-11-12 07:03:10  resolver: 1.1.1.1 (doh)
+# Format: <name> <TTL seconds> <type> <value>. CNAME answers for A/AAAA
+# queries are listed under CNAME only. Names with no records are listed at the end.
+
+## ecomacrobiz.com.
+ecomacrobiz.com 3600 A 185.230.63.107
+ecomacrobiz.com 3600 A 185.230.63.171
+ecomacrobiz.com 3600 A 185.230.63.186
+ecomacrobiz.com 3600 MX 10 ecomacrobiz-com.mail.protection.outlook.com.
+ecomacrobiz.com 3600 TXT "MS=ms43360591"
+ecomacrobiz.com 3600 TXT "v=spf1 include:spf.protection.outlook.com -all"
+ecomacrobiz.com 3600 TXT "google-site-verification=GEJrcDxp5Bo6sfBe0O86RU6_pbwJMkzFptiXRjDN7Xs"
+ecomacrobiz.com 3600 TXT "google-site-verification=k32oOSx6rZ3piMQxZZSsfduKFeEKesKL8J9xQ7U7X_0"
+ecomacrobiz.com 86400 NS ns0.wixdns.net.
+ecomacrobiz.com 86400 NS ns1.wixdns.net.
+
+## www.ecomacrobiz.com.
+www.ecomacrobiz.com 3600 CNAME cdn3.wixdns.net.
+
+## autodiscover.ecomacrobiz.com.
+autodiscover.ecomacrobiz.com 3600 CNAME autodiscover.outlook.com.
+
+## lyncdiscover.ecomacrobiz.com.
+lyncdiscover.ecomacrobiz.com 3600 CNAME webdir.online.lync.com.
+
+## sip.ecomacrobiz.com.
+sip.ecomacrobiz.com 3600 CNAME sipdir.online.lync.com.
+
+## enterpriseregistration.ecomacrobiz.com.
+enterpriseregistration.ecomacrobiz.com 3600 CNAME enterpriseregistration.windows.net.
+
+## enterpriseenrollment.ecomacrobiz.com.
+enterpriseenrollment.ecomacrobiz.com 3600 CNAME enterpriseenrollment.manage.microsoft.com.
+
+## _sip._tls.ecomacrobiz.com.
+_sip._tls.ecomacrobiz.com 3600 SRV 100 1 443 sipdir.online.lync.com
+
+## _sipfederationtls._tcp.ecomacrobiz.com.
+_sipfederationtls._tcp.ecomacrobiz.com 3600 SRV 100 1 5061 sipfed.online.lync.com
+
+## SOA
+ecomacrobiz.com 3600 SOA ns0.wixdns.net. support.wix.com. 2026082506 10800 3600 1209600 3600
+
+## DNSSEC (DS = at the registry/Wix; DNSKEY = served by the current DNS host)
+## If a DS record is listed, DNSSEC is ON: disable it at the registrar and wait
+## out the DS TTL BEFORE changing nameservers, or the domain (incl. e-mail) breaks.
+ecomacrobiz.com 86400 DS 48517 8 2 b7450d4c84359f17f79a14b84601147bee8a72bb9557d905659c6571369535c2
+ecomacrobiz.com 223 DNSKEY 256 3 8 AwEAAa+1WPJ88ic8LChSopxZv... (key truncated)
+ecomacrobiz.com 223 DNSKEY 257 3 8 AwEAAbGdqNoFT2blKsez+y69D... (key truncated)
+
+## No records found for:
+  api.ecomacrobiz.com.
+  mail.ecomacrobiz.com.
+  webmail.ecomacrobiz.com.
+  smtp.ecomacrobiz.com.
+  email.ecomacrobiz.com.
+  ftp.ecomacrobiz.com.
+  m.ecomacrobiz.com.
+  blog.ecomacrobiz.com.
+  shop.ecomacrobiz.com.
+  msoid.ecomacrobiz.com.
+  selector1._domainkey.ecomacrobiz.com.
+  selector2._domainkey.ecomacrobiz.com.
+  _dmarc.ecomacrobiz.com.
+  _autodiscover._tcp.ecomacrobiz.com. (SRV)
+  _sip._tcp.ecomacrobiz.com. (SRV)

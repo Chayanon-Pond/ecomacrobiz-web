@@ -1,0 +1,218 @@
+/* Long-form article typography for <Markdown className="prose-article">.
+ * Thai-first: generous line-height for stacked vowels/tone marks, ~68ch
+ * measure, IBM Plex Sans Thai headings (Latin falls through to Inter Tight). */
+
+.prose-article {
+  --prose-body: rgb(245 245 247 / 0.86);
+  max-width: 68ch;
+  font-size: clamp(1.0625rem, 0.35vw + 0.98rem, 1.1875rem);
+  line-height: 1.9;
+  color: var(--prose-body);
+  overflow-wrap: break-word;
+}
+
+.prose-article > :first-child {
+  margin-top: 0;
+}
+.prose-article > :last-child {
+  margin-bottom: 0;
+}
+
+.prose-article p {
+  margin: 0 0 1.25em;
+}
+
+.prose-article h2,
+.prose-article h3,
+.prose-article h4 {
+  font-family: var(--ff-thai), var(--ff-display), system-ui, sans-serif;
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.45;
+  scroll-margin-top: calc(var(--header-h) + 1.5rem);
+  text-wrap: balance;
+}
+.prose-article h2 {
+  font-size: clamp(1.45rem, 1.4vw + 1rem, 1.95rem);
+  margin: 2.4em 0 0.8em;
+  padding-top: 0.2em;
+}
+.prose-article h3 {
+  font-size: clamp(1.2rem, 0.8vw + 0.95rem, 1.45rem);
+  margin: 2em 0 0.6em;
+}
+.prose-article h4 {
+  font-size: 1.1em;
+  margin: 1.8em 0 0.5em;
+}
+.prose-article h2 + h2,
+.prose-article h2 + h3 {
+  margin-top: 0.6em;
+}
+.prose-article :focus-visible:is(h2, h3, h4) {
+  outline-offset: 6px;
+}
+
+.prose-article strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.prose-article em {
+  color: var(--fg);
+}
+
+.prose-article a {
+  color: var(--accent-soft);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: rgb(123 143 255 / 0.45);
+  overflow-wrap: anywhere;
+  transition: text-decoration-color 0.2s ease, color 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .prose-article a:hover {
+    color: #a9b6ff;
+    text-decoration-color: currentColor;
+  }
+}
+
+/* Lists */
+.prose-article ul,
+.prose-article ol {
+  margin: 0 0 1.4em;
+  padding-left: 1.5em;
+}
+.prose-article ul {
+  list-style: disc;
+}
+.prose-article ol {
+  list-style: decimal;
+}
+.prose-article li {
+  margin: 0.45em 0;
+  padding-left: 0.25em;
+}
+.prose-article li::marker {
+  color: var(--accent-soft);
+  font-family: var(--ff-display), system-ui, sans-serif;
+  font-weight: 600;
+}
+.prose-article li > ul,
+.prose-article li > ol {
+  margin: 0.4em 0 0.4em;
+}
+.prose-article li > p {
+  margin: 0 0 0.5em;
+}
+
+/* Quotes */
+.prose-article blockquote {
+  margin: 2em 0;
+  padding: 1.1em 1.4em;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 1rem 1rem 0;
+  background: linear-gradient(90deg, rgb(15 52 255 / 0.12), rgb(15 52 255 / 0.02));
+  color: var(--fg);
+  font-size: 1.04em;
+}
+.prose-article blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Figures (Markdown.tsx renders <span class="prose-figure"> inside <p>) */
+.prose-article .prose-figure {
+  display: block;
+  margin: 2.2em 0;
+}
+.prose-article p:has(> .prose-figure:only-child) {
+  margin: 0;
+}
+.prose-article .prose-figure img,
+.prose-article img {
+  display: block;
+  /* width:100% + height:auto keeps the width/height attribute ratio before
+   * load (no CLS); tall images are letterboxed instead of towering. */
+  width: 100%;
+  height: auto;
+  max-height: 80svh;
+  object-fit: contain;
+  border-radius: 1rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.prose-article .prose-caption {
+  display: block;
+  margin-top: 0.8em;
+  text-align: center;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* Tables (wrapped in a focusable scroll region by Markdown.tsx) */
+.prose-article .prose-table {
+  margin: 2em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+.prose-article table {
+  width: 100%;
+  min-width: 36rem;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.7;
+}
+.prose-article th,
+.prose-article td {
+  padding: 0.85em 1em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.prose-article th {
+  background: var(--surface-2);
+  color: var(--fg);
+  font-weight: 600;
+}
+.prose-article tbody tr:last-child td {
+  border-bottom: 0;
+}
+.prose-article td:first-child {
+  color: var(--fg);
+}
+
+/* Code */
+.prose-article code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.15em 0.4em;
+  border-radius: 0.4em;
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.prose-article pre {
+  margin: 1.8em 0;
+  padding: 1.1em 1.3em;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--ink-2);
+  line-height: 1.65;
+}
+.prose-article pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.875em;
+}
+
+.prose-article hr {
+  margin: 3em 0;
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+}

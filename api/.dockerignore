@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+bin/
+tmp/
+data/
+*.exe
+*.test
+coverage.out
+Dockerfile
+.dockerignore
+README.md

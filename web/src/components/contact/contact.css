@@ -1,0 +1,87 @@
+/* /contact — classes prefixed `kc-`. */
+
+.kc-input:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgb(123 143 255 / 0.25);
+}
+.kc-input[aria-invalid="true"],
+.kc-check[aria-invalid="true"] {
+  border-color: #ff8f8f;
+}
+.kc-input[type="date"],
+.kc-input[type="time"] {
+  /* iOS renders these as inline-flex with a min-width; keep them in the grid. */
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  line-height: 3rem;
+}
+.kc-input::-webkit-date-and-time-value {
+  text-align: left;
+}
+.kc-error {
+  color: #ff9d9d; /* ≥ 7:1 on --ink */
+}
+.kc-summary {
+  border-color: rgb(255 143 143 / 0.5);
+  background: rgb(255 80 80 / 0.07);
+  color: #ffc2c2;
+}
+
+/* Channel choice (radio as a full-size, invisible hit area) */
+.kc-choice {
+  color: var(--muted);
+}
+.kc-choice:has(.kc-radio:checked) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+fieldset[aria-invalid="true"] .kc-choice {
+  border-color: #ff8f8f;
+}
+.kc-radio:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .kc-choice:not(:has(.kc-radio:checked)):hover {
+    border-color: rgb(245 245 247 / 0.5);
+    color: var(--fg);
+  }
+  .kc-q:hover span:first-child {
+    color: var(--accent-soft);
+  }
+}
+
+.kc-check {
+  accent-color: var(--accent);
+}
+
+/* Honeypot: off-screen (not display:none, which some bots skip). */
+.kc-hp {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* FAQ tabs */
+.kc-tab {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+.kc-tab[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+@media (hover: hover) and (pointer: fine) {
+  .kc-tab[aria-selected="false"]:hover {
+    border-color: rgb(245 245 247 / 0.5);
+    color: var(--fg);
+  }
+}

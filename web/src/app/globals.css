@@ -1,0 +1,440 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------------
+ * Design tokens
+ * Raw values live on :root so non-Tailwind code (GSAP, inline styles) can
+ * read them; @theme exposes them as Tailwind utilities (bg-ink, text-accent…).
+ * --------------------------------------------------------------------- */
+:root {
+  --ink: #050507;
+  --ink-2: #0b0b11;
+  --surface: #101018;
+  --surface-2: #161622;
+  --line: rgb(255 255 255 / 0.09);
+  --line-strong: rgb(255 255 255 / 0.18);
+  --fg: #f5f5f7;
+  --muted: #a3a3ad;
+  --subtle: #6e6e79;
+  /* Brand blue from the Wix theme (rgb 15 52 255). Use for fills & glows. */
+  --accent: #0f34ff;
+  /* Logo mark blue sampled from the client's logo file. */
+  --brand-mark: #0c0cff;
+  /* Lighter blue for accent TEXT on black (WCAG AA ≥ 4.5:1). */
+  --accent-soft: #7b8fff;
+  --accent-glow: rgb(15 52 255 / 0.45);
+
+  --gutter: clamp(1rem, 4vw, 3rem);
+  --header-h: 4rem;
+  --radius-card: clamp(1.25rem, 2vw, 1.75rem);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-brand-mark: var(--brand-mark);
+
+  --font-sans: var(--ff-thai), var(--ff-display), system-ui, sans-serif;
+  --font-display: var(--ff-display), var(--ff-thai), system-ui, sans-serif;
+
+  --radius-card: var(--radius-card);
+  --ease-out-expo: var(--ease-out-expo);
+
+  /* Desktop navigation appears from iPad landscape (1180) upward. */
+  --breakpoint-nav: 73.75rem;
+}
+
+/* ------------------------------------------------------------------------
+ * Base
+ * --------------------------------------------------------------------- */
+html {
+  background: var(--ink);
+  color: var(--fg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--header-h) + 1rem);
+}
+
+body {
+  background: var(--ink);
+  color: var(--fg);
+  font-family: var(--ff-thai), var(--ff-display), system-ui, sans-serif;
+  /* Thai needs taller lines for stacked vowels/tone marks. */
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Every interactive element gets a pointer cursor. */
+a[href],
+button:not(:disabled),
+summary,
+label[for],
+select,
+[role="button"],
+[role="link"],
+[data-clickable] {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Lenis (smooth scroll) recommended styles */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+/* ------------------------------------------------------------------------
+ * Typography helpers
+ * --------------------------------------------------------------------- */
+/* `font-display` / `font-sans` utilities come from @theme above. */
+
+/* Large Latin display type: tight leading/tracking. */
+@utility display-tight {
+  font-family: var(--ff-display), var(--ff-thai), system-ui, sans-serif;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+}
+
+/* Thai headings: comfortable leading, no awkward breaks. */
+@utility thai-heading {
+  line-height: 1.45;
+  letter-spacing: 0;
+  overflow-wrap: break-word;
+}
+
+@utility eyebrow {
+  font-family: var(--ff-display), var(--ff-thai), system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+  line-height: 1.4;
+}
+
+@utility text-balance-safe {
+  text-wrap: balance;
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 90rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* ------------------------------------------------------------------------
+ * Motion system
+ * <html data-motion="full|reduced"> is set by an inline head script before
+ * first paint (see app/layout.tsx). Default is "reduced" so that, without
+ * JS, all content is visible and laid out statically.
+ * --------------------------------------------------------------------- */
+
+/* Hero: letter-by-letter wordmark (pure CSS: does not wait for hydration). */
+.wordmark-letter {
+  display: inline-block;
+}
+[data-motion="full"] .wordmark-letter {
+  opacity: 0;
+  transform: translate3d(0, 0.6em, 0) rotate(6deg);
+  filter: blur(8px);
+  animation: letter-in 1s var(--ease-out-expo) forwards;
+  animation-delay: calc(0.1s + var(--i) * 0.045s);
+}
+@keyframes letter-in {
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+[data-motion="full"] .slide-in {
+  opacity: 0;
+  transform: translate3d(-1.5rem, 0, 0);
+  animation: slide-in 1s var(--ease-out-expo) forwards;
+  animation-delay: var(--delay, 0.9s);
+}
+[data-motion="full"] .fade-up {
+  opacity: 0;
+  transform: translate3d(0, 1.25rem, 0);
+  animation: slide-in 1s var(--ease-out-expo) forwards;
+  animation-delay: var(--delay, 1.1s);
+}
+@keyframes slide-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes scroll-cue {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+
+/* Hero ambient light: transform-only animation of pre-blurred gradients. */
+.aurora {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+  pointer-events: none;
+}
+[data-motion="full"] .aurora-a {
+  animation: drift-a 22s ease-in-out infinite alternate;
+}
+[data-motion="full"] .aurora-b {
+  animation: drift-b 28s ease-in-out infinite alternate;
+}
+[data-motion="full"] .aurora-c {
+  animation: drift-c 34s ease-in-out infinite alternate;
+}
+@keyframes drift-a {
+  0% { transform: translate3d(-10%, -6%, 0) scale(1); }
+  100% { transform: translate3d(12%, 8%, 0) scale(1.25); }
+}
+@keyframes drift-b {
+  0% { transform: translate3d(8%, 10%, 0) scale(1.1); }
+  100% { transform: translate3d(-14%, -8%, 0) scale(0.9); }
+}
+@keyframes drift-c {
+  0% { transform: translate3d(0, 0, 0) scale(0.9); }
+  100% { transform: translate3d(-8%, 12%, 0) scale(1.2); }
+}
+
+/* Scroll reveal: hidden only when motion is on; JS (GSAP) reveals.
+ * Safety net: if the animation bundle never initialises, reveal anyway. */
+[data-motion="full"] [data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, 2.5rem, 0);
+}
+[data-motion="full"]:not(.motion-ready) [data-reveal] {
+  animation: slide-in 0.8s var(--ease-out-expo) 2.5s forwards;
+}
+
+[data-motion="full"] .scrub-word {
+  opacity: 0.22;
+}
+[data-motion="full"]:not(.motion-ready) .scrub-word {
+  animation: slide-in 0.8s ease 2.5s forwards;
+}
+
+/* Designing sequence: pinned with CSS sticky (no pin-spacer jank on iOS). */
+.designing-track {
+  position: relative;
+}
+[data-motion="full"] .designing-track {
+  height: 420svh;
+}
+[data-motion="full"] .designing-stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+}
+[data-motion="full"] .designing-line {
+  position: absolute;
+  inset-inline: 0;
+  opacity: 0;
+}
+[data-motion="full"] .designing-line:first-child {
+  opacity: 1;
+}
+@media (max-width: 767px) {
+  [data-motion="full"] .designing-track {
+    height: 340svh;
+  }
+}
+
+/* Marquee */
+.marquee {
+  --gap: clamp(1.5rem, 4vw, 3.5rem);
+  display: flex;
+  overflow: hidden;
+  user-select: none;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--gap);
+  padding-right: var(--gap);
+  min-width: max-content;
+}
+[data-motion="full"] .marquee-track {
+  animation: marquee var(--duration, 40s) linear infinite;
+}
+[data-motion="full"] .marquee[data-direction="reverse"] .marquee-track {
+  animation-direction: reverse;
+}
+/* Reduced motion / no JS: a static, wrapped list instead of a ticker. */
+[data-motion="reduced"] .marquee {
+  mask-image: none;
+}
+[data-motion="reduced"] .marquee-track {
+  flex-wrap: wrap;
+  min-width: 0;
+  flex-shrink: 1;
+  row-gap: 0.5rem;
+  padding-inline: var(--gutter);
+}
+[data-motion="reduced"] .marquee-track[aria-hidden="true"] {
+  display: none;
+}
+@media (hover: hover) {
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+}
+@keyframes marquee {
+  to {
+    transform: translate3d(-100%, 0, 0);
+  }
+}
+
+/* Spotlight cards: cursor-following glow (fine pointers only). */
+.spotlight {
+  --mx: 50%;
+  --my: 0%;
+  position: relative;
+  isolation: isolate;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  background: radial-gradient(
+    600px circle at var(--mx) var(--my),
+    rgb(15 52 255 / 0.28),
+    transparent 45%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+.spotlight::after {
+  /* gradient border that brightens near the cursor */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    400px circle at var(--mx) var(--my),
+    rgb(123 143 255 / 0.9),
+    var(--line) 40%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+}
+.spotlight:focus-within::before,
+.spotlight:focus-visible::before {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .spotlight:hover::before {
+    opacity: 1;
+  }
+}
+
+/* Header glass */
+.glass {
+  background: rgb(8 8 12 / 0.62);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Custom cursor follower (only mounted on fine pointers). */
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  pointer-events: none;
+  z-index: 100;
+  mix-blend-mode: difference;
+  transition:
+    width 0.3s var(--ease-out-expo),
+    height 0.3s var(--ease-out-expo),
+    margin 0.3s var(--ease-out-expo),
+    background-color 0.3s ease,
+    opacity 0.3s ease;
+}
+.cursor-ring[data-active="true"] {
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  background-color: rgb(255 255 255 / 0.9);
+}
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 9999px;
+  background: var(--accent-soft);
+  pointer-events: none;
+  z-index: 101;
+}
+
+/* Grain overlay to add depth to flat blacks (static, cheap). */
+.grain {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Hard stop for anything that animates when the user prefers less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

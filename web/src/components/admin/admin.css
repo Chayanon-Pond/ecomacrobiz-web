@@ -1,0 +1,362 @@
+/* Admin-only component styles. Tokens come from globals.css :root. */
+/* In the components layer so Tailwind utilities (md:hidden, text-lg, w-full…) can override. */
+@layer components {
+
+.adm-root {
+  min-height: 100dvh;
+  background: var(--ink);
+  color: var(--fg);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.adm-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.adm-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 0.375rem;
+}
+.adm-hint {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.adm-hint[data-warn="true"] {
+  color: #f5c46b;
+}
+.adm-hint[data-over="true"] {
+  color: #ff8a8a;
+}
+.adm-field-error {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: #ff8a8a;
+}
+
+.adm-input {
+  width: 100%;
+  background: var(--ink-2);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.adm-input::placeholder {
+  color: var(--subtle);
+}
+.adm-input:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgb(123 143 255 / 0.25);
+}
+.adm-input[aria-invalid="true"] {
+  border-color: #ff8a8a;
+}
+.adm-input:disabled {
+  opacity: 0.6;
+}
+select.adm-input {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 1rem) 55%, calc(100% - 0.7rem) 55%;
+  background-size: 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+textarea.adm-input {
+  resize: vertical;
+}
+.adm-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, var(--ff-thai), monospace;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  min-height: 28rem;
+  tab-size: 2;
+}
+
+.adm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.95rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.adm-btn:hover {
+  background: #1e1e2e;
+}
+.adm-btn:disabled,
+.adm-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.adm-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.adm-btn-primary:hover {
+  background: #2a4bff;
+}
+.adm-btn-danger {
+  background: transparent;
+  border-color: rgb(255 138 138 / 0.45);
+  color: #ffb1b1;
+}
+.adm-btn-danger:hover {
+  background: rgb(255 80 80 / 0.12);
+}
+.adm-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.adm-btn-ghost:hover {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.adm-btn-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.adm-link {
+  color: var(--accent-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.adm-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.adm-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  background: var(--ink-2);
+}
+.adm-table td {
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.adm-table tr:last-child td {
+  border-bottom: 0;
+}
+.adm-table tbody tr:hover td {
+  background: rgb(255 255 255 / 0.02);
+}
+
+.adm-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.adm-badge[data-tone="blue"] {
+  color: #b9c4ff;
+  border-color: rgb(123 143 255 / 0.5);
+  background: rgb(15 52 255 / 0.15);
+}
+.adm-badge[data-tone="green"] {
+  color: #9ff0c0;
+  border-color: rgb(80 220 140 / 0.45);
+  background: rgb(80 220 140 / 0.1);
+}
+.adm-badge[data-tone="amber"] {
+  color: #ffd98a;
+  border-color: rgb(245 196 107 / 0.45);
+  background: rgb(245 196 107 / 0.1);
+}
+.adm-badge[data-tone="red"] {
+  color: #ffb1b1;
+  border-color: rgb(255 138 138 / 0.45);
+  background: rgb(255 80 80 / 0.1);
+}
+
+.adm-alert {
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.875rem;
+  border: 1px solid rgb(255 138 138 / 0.45);
+  background: rgb(255 80 80 / 0.1);
+  color: #ffd0d0;
+}
+.adm-alert[data-tone="info"] {
+  border-color: rgb(123 143 255 / 0.45);
+  background: rgb(15 52 255 / 0.12);
+  color: #d5dbff;
+}
+
+.adm-dialog {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  border-radius: 1rem;
+  padding: 0;
+  width: min(30rem, calc(100vw - 2rem));
+  margin: auto;
+}
+.adm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.65);
+}
+
+.adm-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.adm-nav-link:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.adm-nav-link[aria-current="page"] {
+  color: var(--fg);
+  background: rgb(15 52 255 / 0.18);
+}
+
+.adm-toasts {
+  position: fixed;
+  z-index: 60;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: calc(100vw - 2rem);
+}
+.adm-toast {
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  font-size: 0.875rem;
+}
+.adm-toast[data-tone="success"] {
+  border-color: rgb(80 220 140 / 0.5);
+}
+.adm-toast[data-tone="error"] {
+  border-color: rgb(255 138 138 / 0.55);
+}
+
+.adm-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.625rem;
+  overflow: hidden;
+}
+.adm-tabs button {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.adm-tabs button[aria-selected="true"],
+.adm-tabs button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.adm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  border: 1px solid var(--line-strong);
+  border-bottom: 0;
+  border-radius: 0.625rem 0.625rem 0 0;
+  background: var(--surface-2);
+}
+.adm-toolbar + .adm-input {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.adm-toolbar button {
+  min-width: 2rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  border-radius: 0.4rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.adm-toolbar button:hover {
+  background: var(--ink-2);
+  border-color: var(--line-strong);
+}
+
+.adm-preview {
+  min-height: 28rem;
+  max-height: 80dvh;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.625rem;
+  padding: 1.25rem;
+  background: var(--ink);
+}
+
+.adm-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent-soft);
+  animation: adm-spin 0.8s linear infinite;
+}
+@keyframes adm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm-spinner {
+    animation-duration: 2.4s;
+  }
+}
+}

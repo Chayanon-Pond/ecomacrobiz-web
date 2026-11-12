@@ -1,0 +1,88 @@
+# Local development stack for ECOMACROBIZ.
+#   docker compose up -d db          # Postgres only (host port 55432)
+#   docker compose up -d --build     # Postgres + Go API (http://localhost:18080)
+#   docker compose --profile web up -d --build
+#                                    # + Next.js prod image (http://localhost:3300)
+#   (web profile: set WEB_REVALIDATE_URL=http://web:3000/api/revalidate and a
+#    REVALIDATE_SECRET in the shell or a root .env so publishing revalidates.)
+# Values here are development defaults only; copy api/.env.example to api/.env
+# to override (api/.env is gitignored and optional).
+
+name: escoma
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: escoma
+      POSTGRES_USER: escoma
+      POSTGRES_PASSWORD: escoma-dev-only
+      TZ: UTC
+    ports:
+      # Override with DB_HOST_PORT if Windows reserved the port (netsh int ipv4
+      # show excludedportrange protocol=tcp — Hyper-V reserves ranges at boot).
+      - "${DB_HOST_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U escoma -d escoma"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./api/.env
+        required: false
+    environment:
+      PORT: "8080"
+      APP_ENV: development
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://escoma:escoma-dev-only@db:5432/escoma?sslmode=disable
+      MIGRATE_ON_START: "true"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:${WEB_HOST_PORT:-3300}
+      # Docker bridge networks: the Next server proxies from here in dev.
+      TRUSTED_PROXIES: 127.0.0.1,::1,172.16.0.0/12
+      COOKIE_SECURE: "false"
+      PUBLIC_BASE_URL: http://localhost:${API_HOST_PORT:-18080}
+      # Next.js on the host (npm run start -- -p 3001) receives tag revalidation.
+      WEB_REVALIDATE_URL: ${WEB_REVALIDATE_URL:-http://host.docker.internal:3001/api/revalidate}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+      MEDIA_DIR: /data/media
+    ports:
+      # Host port 18080 by default (8080 is often taken, e.g. by Jenkins).
+      - "${API_HOST_PORT:-18080}:8080"
+    volumes:
+      - media:/data/media
+
+  web:
+    profiles: ["web"]
+    build:
+      context: ./web
+      args:
+        # Build-time (inlined). Local http origin -> no HSTS header.
+        NEXT_PUBLIC_SITE_URL: http://localhost:${WEB_HOST_PORT:-3300}
+        NEXT_PUBLIC_MEDIA_ORIGIN: ""
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      PORT: "3000"
+      API_URL: http://api:8080
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+      CLIENT_IP_HEADER: ""
+    ports:
+      # 3300 by default (3000 = next dev on the host).
+      - "${WEB_HOST_PORT:-3300}:3000"
+
+volumes:
+  pgdata:
+  media:

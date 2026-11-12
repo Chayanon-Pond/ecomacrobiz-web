@@ -1,0 +1,69 @@
+/* /how-we-work page — classes prefixed `hww-`. */
+
+/* ---------- Process ---------- */
+.hww-step {
+  scroll-margin-top: calc(var(--header-h) + 1.5rem);
+}
+@media (min-width: 1024px) {
+  /* Each step gets scroll room so the sticky panel can "play" through them. */
+  .hww-step {
+    min-height: 62svh;
+    display: flex;
+    align-items: center;
+  }
+  .hww-step:first-child {
+    min-height: 50svh;
+    align-items: flex-start;
+  }
+}
+.hww-step-card {
+  transition:
+    border-color 0.5s ease,
+    background-color 0.5s ease;
+}
+.hww-step[data-active="true"] .hww-step-card {
+  border-color: rgb(123 143 255 / 0.55);
+  background-color: var(--surface-2);
+}
+.hww-step-dot {
+  transition:
+    background-color 0.4s ease,
+    box-shadow 0.4s ease;
+}
+.hww-step[data-active="true"] .hww-step-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgb(15 52 255 / 0.2), 0 0 24px 4px var(--accent-glow);
+}
+
+/* ---------- FAQ accordion ----------
+ * Answers are always in the HTML (SEO). Collapse uses grid rows 0fr -> 1fr;
+ * visibility keeps collapsed text out of the accessibility tree and tab order
+ * once the transition ends. */
+.hww-faq-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.45s var(--ease-out-expo);
+}
+.hww-faq-panel > div {
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear 0.45s;
+}
+.hww-faq-panel[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.hww-faq-panel[data-open="true"] > div {
+  visibility: visible;
+  transition-delay: 0s;
+}
+[data-motion="reduced"] .hww-faq-panel,
+[data-motion="reduced"] .hww-faq-panel > div {
+  transition: none;
+}
+.hww-faq-icon {
+  transition: transform 0.45s var(--ease-out-expo);
+}
+[aria-expanded="true"] .hww-faq-icon {
+  transform: rotate(45deg);
+}

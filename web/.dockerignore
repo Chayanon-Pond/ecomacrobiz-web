@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+build
+coverage
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore
+.vercel
+.DS_Store
+Thumbs.db

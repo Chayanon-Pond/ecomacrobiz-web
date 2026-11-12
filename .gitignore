@@ -1,0 +1,47 @@
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- env / secrets (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- logs ---
+*.log
+npm-debug.log*
+
+# --- web (Next.js) ---
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/coverage/
+web/next-env.d.ts
+web/*.tsbuildinfo
+web/.vercel
+
+# --- api (Go, Phase 2) ---
+api/bin/
+api/tmp/
+api/*.exe
+api/*.test
+api/coverage.out
+api/vendor/
+
+# --- Claude local settings ---
+.claude/
+api/data/
+.tmp-*/
+.tmp-*
+api/.env
+web/.env.local
+*.pem
+*.key
+*.p12
+# local Docker/Next build outputs
+web/.next/standalone/

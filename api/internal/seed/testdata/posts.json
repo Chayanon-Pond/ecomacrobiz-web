@@ -1,0 +1,42 @@
+{
+  "categories": [
+    { "slug": "business-growth", "name": "Business Growth", "nameTh": "การเติบโตทางธุรกิจ", "description": "กลยุทธ์การเติบโตของธุรกิจ" },
+    { "slug": "brand-insight", "name": "Brand Insight", "nameTh": "อินไซต์แบรนด์", "description": "" },
+    { "slug": "ecomacrobiz-insights", "name": "ECOMACROBIZ Insights", "nameTh": "มุมมองจาก ECOMACROBIZ", "description": "" },
+    { "slug": "learning-hub", "name": "Learning Hub", "nameTh": "แหล่งเรียนรู้", "description": "" }
+  ],
+  "posts": [
+    {
+      "slug": "branding-vs-marketing",
+      "legacySlugs": ["branding-vs-marketing"],
+      "title": "Branding กับ Marketing ต่างกันอย่างไร",
+      "excerpt": "ทำความเข้าใจความต่างระหว่างการสร้างแบรนด์และการตลาด",
+      "seoTitle": "Branding กับ Marketing ต่างกันอย่างไร | ECOMACROBIZ",
+      "seoDescription": "ความแตกต่างระหว่าง Branding และ Marketing",
+      "cover": { "src": "/images/knowledge/branding-vs-marketing/cover.webp", "width": 1600, "height": 900, "alt": "ภาพปกบทความ Branding กับ Marketing" },
+      "categories": ["brand-insight"],
+      "author": "ECOMACROBIZ",
+      "publishedAt": "2026-11-09T10:00:00+07:00",
+      "updatedAt": "2026-11-10T10:00:00+07:00",
+      "readingMinutes": 5,
+      "featured": true,
+      "bodyMarkdown": "## Branding คืออะไร\n\nBranding คือการสร้างตัวตน...\n\n![ภาพประกอบ](/images/knowledge/branding-vs-marketing/1.webp \"1200x800\")"
+    },
+    {
+      "slug": "business-growth-mindset",
+      "legacySlugs": ["แนวคิดการเติบโตทางธุรกิจ"],
+      "title": "แนวคิดการเติบโตทางธุรกิจ",
+      "excerpt": "แนวคิดสำคัญสำหรับการเติบโต",
+      "seoTitle": "",
+      "seoDescription": "",
+      "cover": null,
+      "categories": ["business-growth", "ecomacrobiz-insights"],
+      "author": "ECOMACROBIZ",
+      "publishedAt": "2026-10-01T09:00:00+07:00",
+      "updatedAt": "2026-10-01T09:00:00+07:00",
+      "readingMinutes": 0,
+      "featured": false,
+      "bodyMarkdown": "เนื้อหาภาษาไทยทั้งหมด"
+    }
+  ]
+}

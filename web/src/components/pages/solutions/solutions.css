@@ -1,0 +1,17 @@
+/* /solutions page — classes prefixed `sol-`. */
+
+/* Native anchor jumps land below the header + mobile chip bar. */
+.sol-chapter {
+  scroll-margin-top: calc(var(--header-h) + 4.75rem);
+}
+@media (min-width: 1024px) {
+  .sol-chapter {
+    scroll-margin-top: calc(var(--header-h) + 2rem);
+  }
+}
+
+/* Outline numerals behind the hero title (decorative). */
+.sol-outline {
+  color: transparent;
+  -webkit-text-stroke: 1px rgb(255 255 255 / 0.14);
+}

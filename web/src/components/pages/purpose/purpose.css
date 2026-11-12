@@ -1,0 +1,46 @@
+/* /purpose page — classes prefixed `pp-`. Initial/dimmed states only apply
+ * under [data-motion="full"]; reduced motion and no-JS get a static list. */
+
+.pp-lens-track {
+  position: relative;
+}
+.pp-lens-progress {
+  display: none;
+}
+
+@media (min-width: 768px) and (min-height: 640px) {
+  [data-motion="full"] .pp-lens-track {
+    height: 340svh;
+  }
+  [data-motion="full"] .pp-lens-stage {
+    position: sticky;
+    top: 0;
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    padding-top: var(--header-h);
+  }
+  [data-motion="full"] .pp-lens-body {
+    opacity: 0.26;
+    transform: translate3d(0, 0, 0);
+    transition:
+      opacity 0.6s var(--ease-out-expo),
+      transform 0.6s var(--ease-out-expo);
+  }
+  [data-motion="full"] [data-active="true"] > .pp-lens-body {
+    opacity: 1;
+    transform: translate3d(0.75rem, 0, 0);
+  }
+  [data-motion="full"] .pp-lens-dot {
+    transition:
+      background-color 0.4s ease,
+      width 0.4s var(--ease-out-expo);
+  }
+  [data-motion="full"] .pp-lens-dot[data-active="true"] {
+    width: 3rem;
+    background: var(--accent);
+  }
+  [data-motion="full"] .pp-lens-progress {
+    display: flex;
+  }
+}
