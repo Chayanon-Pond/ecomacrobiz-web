@@ -4,9 +4,9 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=local
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN go mod download
 COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+RUN \
     go build -trimpath -ldflags "-s -w" -o /out/server ./cmd/server \
  && mkdir -p /out/data/media
 

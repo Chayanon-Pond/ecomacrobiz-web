@@ -13,7 +13,7 @@ ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 FROM node:${NODE_VERSION}-alpine AS build
 WORKDIR /app
