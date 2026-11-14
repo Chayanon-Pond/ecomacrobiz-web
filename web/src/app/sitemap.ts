@@ -4,7 +4,7 @@ import { getAllPostSlugs, getCategories, getPost } from "@/lib/posts";
 
 /**
  * Public pages + every published (indexable) post + every non-empty category.
- * Excludes /admin, /api, /privacy (noindex until legal approval) and posts
+ * Excludes /admin, /api, /account, /privacy (noindex until legal approval) and posts
  * flagged noindex or whose canonical_url points elsewhere. lastModified = updated_at.
  * Built only from cached readers (tag `posts`), so post changes revalidate it.
  */
@@ -16,6 +16,7 @@ const staticPages: { path: string; priority: number; changeFrequency: "weekly" |
   { path: "/how-we-work", priority: 0.8, changeFrequency: "monthly" },
   { path: "/knowledge", priority: 0.8, changeFrequency: "weekly" },
   { path: "/contact", priority: 0.8, changeFrequency: "monthly" },
+  { path: "/community-guidelines", priority: 0.3, changeFrequency: "monthly" },
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

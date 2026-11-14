@@ -1,0 +1,299 @@
+/* Member auth + account UI — classes prefixed `ca-`. */
+
+.ca-input {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.875rem;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-2);
+  padding-inline: 1rem;
+  font-size: 1rem; /* ≥ 16px: no iOS zoom on focus */
+  color: var(--fg);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ca-input::placeholder {
+  color: var(--subtle);
+}
+.ca-input:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgb(123 143 255 / 0.25);
+}
+.ca-input[aria-invalid="true"],
+.ca-check[aria-invalid="true"] {
+  border-color: #ff8f8f;
+}
+.ca-input:disabled {
+  opacity: 0.6;
+}
+.ca-error {
+  color: #ff9d9d;
+}
+.ca-ok {
+  color: #7ee2a8;
+}
+.ca-alert {
+  border: 1px solid rgb(255 143 143 / 0.45);
+  background: rgb(255 80 80 / 0.08);
+  color: #ffc9c9;
+}
+.ca-info {
+  border: 1px solid rgb(123 143 255 / 0.4);
+  background: rgb(15 52 255 / 0.1);
+  color: #d4dbff;
+}
+.ca-success {
+  border: 1px solid rgb(126 226 168 / 0.4);
+  background: rgb(40 180 110 / 0.1);
+  color: #c9f5da;
+}
+.ca-check {
+  accent-color: var(--accent);
+}
+
+/* Honeypot: off-screen (not display:none, which some bots skip). */
+.ca-hp {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Buttons */
+.ca-btn {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding-inline: 1.5rem;
+  font-weight: 600;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s var(--ease-out-expo);
+}
+.ca-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.ca-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.ca-btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.ca-btn-ghost {
+  border: 1px solid var(--line-strong);
+  color: var(--fg);
+}
+.ca-btn-danger {
+  background: #c62828;
+  color: #fff;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ca-btn-primary:hover:not(:disabled) {
+    background: #2a4bff;
+  }
+  .ca-btn-ghost:hover:not(:disabled) {
+    border-color: rgb(245 245 247 / 0.5);
+    background: rgb(255 255 255 / 0.04);
+  }
+  .ca-btn-danger:hover:not(:disabled) {
+    background: #d93636;
+  }
+}
+
+/* Google button (Google Identity branding: light theme, #747775 stroke, #1F1F1F text). */
+.ca-google {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid #747775;
+  background: #fff;
+  padding-inline: 0.75rem 1rem;
+  color: #1f1f1f;
+  font-family: Roboto, var(--ff-thai), var(--ff-display), system-ui, sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+.ca-google:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ca-google:hover:not(:disabled) {
+    background: #f2f2f2;
+    box-shadow: 0 1px 2px rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
+  }
+}
+
+/* Tabs (pill segmented control) */
+.ca-tab {
+  color: var(--muted);
+}
+.ca-tab[aria-selected="true"] {
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ca-tab[aria-selected="false"]:hover {
+    color: var(--fg);
+  }
+}
+
+/* Strength meter */
+.ca-meter > span {
+  background: var(--line-strong);
+  transition: background-color 0.3s;
+}
+.ca-meter[data-score="0"] > span:nth-child(-n + 1) {
+  background: #ff6b6b;
+}
+.ca-meter[data-score="1"] > span:nth-child(-n + 2) {
+  background: #ff9f43;
+}
+.ca-meter[data-score="2"] > span:nth-child(-n + 3) {
+  background: #f7d046;
+}
+.ca-meter[data-score="3"] > span:nth-child(-n + 4) {
+  background: #7ee2a8;
+}
+.ca-meter[data-score="4"] > span {
+  background: #3ddc84;
+}
+.ca-meter[data-empty="true"] > span {
+  background: var(--line-strong) !important;
+}
+
+.ca-spinner {
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: ca-spin 0.7s linear infinite;
+}
+@keyframes ca-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * Modal: centered card ≥ 640px, bottom sheet below.
+ * --------------------------------------------------------------------- */
+.ca-overlay {
+  background: rgb(3 3 6 / 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.32s var(--ease-out-expo);
+}
+.ca-root[data-state="open"] .ca-overlay {
+  opacity: 1;
+}
+
+.ca-panel {
+  opacity: 0;
+  transform: translate3d(0, 100%, 0);
+  transition:
+    transform 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.25s ease-out;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+}
+.ca-root[data-state="open"] .ca-panel {
+  opacity: 1;
+  transform: translate3d(0, var(--ca-drag, 0px), 0);
+}
+.ca-root[data-dragging="true"] .ca-panel {
+  transition: none;
+}
+.ca-root[data-state="closing"] .ca-panel {
+  transition-duration: 0.28s, 0.2s;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1), ease-in;
+}
+
+@media (min-width: 640px) {
+  .ca-panel {
+    transform: translate3d(0, 12px, 0) scale(0.96);
+    padding-bottom: 1.75rem;
+    /* Gentle spring (slight overshoot). */
+    transition:
+      transform 0.55s linear(0, 0.06 2.4%, 0.22 5.2%, 0.63 11.4%, 0.84 15.6%, 0.97 20.4%, 1.03 25%, 1.05 29.8%, 1.04 36%, 1.01 46%, 0.995 60%, 1),
+      opacity 0.25s ease-out;
+  }
+  .ca-root[data-state="open"] .ca-panel {
+    transform: none;
+  }
+}
+
+[data-motion="reduced"] .ca-panel,
+[data-motion="reduced"] .ca-root[data-state="open"] .ca-panel {
+  transform: none !important;
+  transition: opacity 0.2s linear !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ca-panel,
+  .ca-root[data-state="open"] .ca-panel {
+    transform: none !important;
+    transition: opacity 0.2s linear !important;
+  }
+  .ca-overlay {
+    backdrop-filter: none;
+  }
+}
+
+.ca-success-pop {
+  animation: ca-pop 0.5s var(--ease-out-expo) both;
+}
+@keyframes ca-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+[data-motion="reduced"] .ca-success-pop {
+  animation: none;
+}
+
+/* Account: horizontal-scroll tabs on small screens */
+.ca-scroll-x {
+  scrollbar-width: none;
+}
+.ca-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+.ca-acc-tab {
+  color: var(--muted);
+}
+.ca-acc-tab[aria-selected="true"] {
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.ca-acc-tab[data-danger="true"][aria-selected="true"] {
+  color: #ffb4b4;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ca-acc-tab[aria-selected="false"]:hover {
+    color: var(--fg);
+    background: rgb(255 255 255 / 0.03);
+  }
+}
+
+/* Visually hidden file input: show its focus on the label button. */
+.ca-file:focus-visible + label {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 3px;
+}

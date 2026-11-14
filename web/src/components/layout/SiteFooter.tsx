@@ -77,6 +77,12 @@ export function SiteFooter() {
           <Link href="/privacy" className="inline-flex min-h-11 items-center transition-colors hover:text-fg">
             นโยบายความเป็นส่วนตัว
           </Link>
+          <Link href="/community-guidelines" className="inline-flex min-h-11 items-center transition-colors hover:text-fg">
+            แนวปฏิบัติของชุมชน
+          </Link>
+          <Link href="/account" prefetch={false} className="inline-flex min-h-11 items-center transition-colors hover:text-fg">
+            บัญชีสมาชิก
+          </Link>
           <p className="font-display tracking-[0.12em]">TURNING DIRECTION INTO GROWTH</p>
         </div>
       </div>
