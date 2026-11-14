@@ -6,7 +6,8 @@
  * src/content/how-we-work.ts, not duplicated here).
  * New copy (no Wix source): hero intro, channel descriptions, "what happens
  * next", the optional message field, PDPA consent + privacy notice, form
- * states. The Wix page has no address, map or email.
+ * states. The Wix page had no address, map or email; the office address and
+ * hours come from content/site.ts `office` (supplied by the boss 2026-11-14).
  */
 import type { ContactChannel } from "@/lib/contact/validation";
 
@@ -28,6 +29,7 @@ export const contactChannelsCopy = {
   phone: { label: "โทรศัพท์", note: "คุยกับทีมงานโดยตรง" },
   line: { label: "LINE Official", note: "แชตสอบถามหรือส่งรายละเอียดเบื้องต้น" },
   socialsHeading: "ติดตามเรา",
+  officeHeading: "ที่ตั้งสำนักงานและเวลาทำการ",
 } as const;
 
 export const contactSteps = {

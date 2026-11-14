@@ -2,7 +2,7 @@
  * Shared JSON-LD builders. Every inner page renders <JsonLd data={...} />
  * with at least a BreadcrumbList. URLs are absolutised against site.url.
  */
-import { site } from "@/content/site";
+import { office, site } from "@/content/site";
 
 type Json = Record<string, unknown>;
 
@@ -63,29 +63,67 @@ export const organizationRef = {
   logo,
 } as const;
 
-/**
- * Site-wide Organization. No ProfessionalService/LocalBusiness: those need a
- * street address, and content/ has none (contact.ts: "The Wix page has no
- * address, map or email").
- * TODO(address): once the company address is confirmed, add
- * `address: { "@type": "PostalAddress", ... }` here and switch @type to
- * ["Organization", "ProfessionalService"].
- */
+/** The office address (content/site.ts `office`). */
+export function postalAddressJsonLd(): Json {
+  const a = office.postal;
+  return {
+    "@type": "PostalAddress",
+    streetAddress: a.streetAddress,
+    addressLocality: a.addressLocality,
+    addressRegion: a.addressRegion,
+    postalCode: a.postalCode,
+    addressCountry: a.addressCountry,
+  };
+}
+
+/** Site-wide Organization (one node, referenced elsewhere by ORGANIZATION_ID). */
 export function organizationJsonLd(sameAs: string[]): Json {
   return {
     "@context": "https://schema.org",
     ...organizationRef,
     legalName: site.legalName,
     description: site.description,
-    telephone: site.contact.phoneE164,
+    telephone: office.phoneE164,
+    address: postalAddressJsonLd(),
     areaServed: "TH",
     sameAs,
     contactPoint: {
       "@type": "ContactPoint",
-      telephone: site.contact.phoneE164,
+      telephone: office.phoneE164,
       contactType: "customer service",
       availableLanguage: ["th", "en"],
     },
+  };
+}
+
+export const OFFICE_ID = `${site.url.replace(/\/$/, "")}/contact#office`;
+
+/**
+ * The office as a ProfessionalService (rendered on /contact only). Linked to
+ * the site-wide Organization by @id instead of restating it. No priceRange,
+ * no geo (TODO(geo) in content/site.ts).
+ */
+export function professionalServiceJsonLd(): Json {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    "@id": OFFICE_ID,
+    name: office.name,
+    url: absUrl("/contact"),
+    logo,
+    image: absUrl("/opengraph-image.jpg"),
+    telephone: office.phoneE164,
+    address: postalAddressJsonLd(),
+    areaServed: "TH",
+    openingHoursSpecification: [
+      {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: [...office.hours.days],
+        opens: office.hours.opens,
+        closes: office.hours.closes,
+      },
+    ],
+    parentOrganization: { "@id": ORGANIZATION_ID },
   };
 }
 

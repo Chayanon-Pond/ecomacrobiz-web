@@ -4,7 +4,8 @@ import { defaultOgImage } from "@/components/knowledge/format";
 import { site, socials } from "@/content/site";
 import { contactChannelsCopy, contactFaqCopy, contactForm, contactPage, contactSteps } from "@/content/contact";
 import { faq } from "@/content/how-we-work";
-import { JsonLd, absUrl, breadcrumbJsonLd, webPageJsonLd } from "@/lib/seo/jsonld";
+import { JsonLd, OFFICE_ID, breadcrumbJsonLd, professionalServiceJsonLd, webPageJsonLd } from "@/lib/seo/jsonld";
+import { OfficeAddress } from "@/components/layout/OfficeAddress";
 import { KnowledgeHero } from "@/components/knowledge/KnowledgeHero";
 import { ContactForm } from "@/components/contact/ContactForm";
 import { FaqTabs } from "@/components/contact/FaqTabs";
@@ -50,23 +51,11 @@ export default function ContactPage() {
               name: `${contactPage.title} — ${contactPage.titleTh}`,
               description: contactPage.seoDescription,
             }),
-            mainEntity: {
-              "@type": "Organization",
-              name: site.name,
-              legalName: site.legalName,
-              url: site.url,
-              logo: absUrl("/images/logo.png"),
-              telephone: site.contact.phoneE164,
-              sameAs: socials.map((s) => s.href),
-              contactPoint: {
-                "@type": "ContactPoint",
-                telephone: site.contact.phoneE164,
-                contactType: "customer service",
-                areaServed: "TH",
-                availableLanguage: ["th", "en"],
-              },
-            },
+            // The office node below; it points to the site-wide Organization
+            // (app/(site)/layout.tsx) by @id, so nothing is restated here.
+            mainEntity: { "@id": OFFICE_ID },
           },
+          professionalServiceJsonLd(),
         ]}
       />
 
@@ -149,6 +138,11 @@ export default function ContactPage() {
                     </li>
                   ))}
               </ul>
+            </div>
+
+            <div>
+              <h2 className="eyebrow mb-4">{contactChannelsCopy.officeHeading}</h2>
+              <OfficeAddress className="text-base" />
             </div>
 
             <div className="rounded-[var(--radius-card)] border border-line p-6 sm:p-7">

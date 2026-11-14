@@ -10,11 +10,32 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ImageResponse } from "next/og";
+import type { ImageResponse as ImageResponseClass } from "next/og";
 import { cacheLife, cacheTag } from "next/cache";
 import { site } from "@/content/site";
 import { getPost, normalizeSlug } from "@/lib/posts";
 import { OG_SIZE } from "@/lib/seo/og";
+
+/*
+ * next/og is loaded with a runtime require instead of an import: any bundled
+ * reference to it (even a dynamic import()) makes Turbopack add its
+ * async-module support to the SHARED browser runtime chunk, +1.2 KB raw /
+ * +0.45 KB gz on every public page although no browser code uses it.
+ * Standalone tracing: next.config.ts `outputFileTracingIncludes`.
+ */
+const OG_MODULE = ["next", "og"].join("/");
+let ImageResponseCtor: typeof ImageResponseClass | null = null;
+
+function imageResponse(): typeof ImageResponseClass {
+  if (!ImageResponseCtor) {
+    // process.getBuiltinModule: Turbopack rewrites a statically visible
+    // createRequire() call into a "too dynamic" stub.
+    const { createRequire } = process.getBuiltinModule("node:module");
+    const og = createRequire(import.meta.url)(OG_MODULE) as { ImageResponse: typeof ImageResponseClass };
+    ImageResponseCtor = og.ImageResponse;
+  }
+  return ImageResponseCtor;
+}
 
 let fontsPromise: Promise<{ semibold: Buffer; medium: Buffer }> | null = null;
 
@@ -47,6 +68,7 @@ async function renderPostOg(slug: string): Promise<Uint8Array | null> {
   const category = post.categories[0]?.name ?? "Knowledge";
   const host = site.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
+  const ImageResponse = imageResponse();
   const res = new ImageResponse(
     (
       <div

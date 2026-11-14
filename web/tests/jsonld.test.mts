@@ -2,12 +2,16 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ORGANIZATION_ID,
+  OFFICE_ID,
   absUrl,
   blogPostingJsonLd,
   breadcrumbJsonLd,
   organizationJsonLd,
+  professionalServiceJsonLd,
   websiteJsonLd,
 } from "../src/lib/seo/jsonld";
+import { office, site as siteContent, socials } from "../src/content/site";
 import { OG_SIZE, postShareImage } from "../src/lib/seo/og";
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -42,6 +46,63 @@ describe("Organization + WebSite", () => {
     assert.equal(site.inLanguage, "th-TH");
     assert.deepEqual(site.publisher, { "@id": org["@id"] });
     assertAbsoluteUrls(site);
+  });
+});
+
+const expectedAddress = {
+  "@type": "PostalAddress",
+  streetAddress: "1 Empire Tower Building, 47th Floor, Unit 4703, South Sathorn Road",
+  addressLocality: "Sathorn",
+  addressRegion: "Bangkok",
+  postalCode: "10120",
+  addressCountry: "TH",
+};
+
+describe("NAP on the Organization", () => {
+  const org = organizationJsonLd(socials.map((s) => s.href));
+  test("has the office PostalAddress, E.164 telephone and every social profile", () => {
+    assert.deepEqual(org.address, expectedAddress);
+    assert.equal(org.telephone, "+66649269968");
+    assert.match(org.telephone as string, /^\+66\d{8,9}$/);
+    const sameAs = org.sameAs as string[];
+    for (const host of ["lin.ee", "facebook.com", "linkedin.com", "instagram.com"]) {
+      assert.ok(sameAs.some((u) => new URL(u).hostname.endsWith(host)), `sameAs missing ${host}`);
+    }
+    sameAs.forEach((u) => assert.ok(isAbs(u)));
+    assert.equal(org.legalName, office.name);
+  });
+});
+
+describe("ProfessionalService (/contact)", () => {
+  const ps = professionalServiceJsonLd();
+  test("required fields, absolute URLs, same NAP as the Organization", () => {
+    assert.equal(ps["@type"], "ProfessionalService");
+    assert.equal(ps["@id"], OFFICE_ID);
+    assert.equal(ps.name, "ECOMACROBIZ CO., LTD.");
+    assert.equal(ps.name, siteContent.legalName);
+    assert.equal(ps.telephone, organizationJsonLd([]).telephone);
+    assert.deepEqual(ps.address, expectedAddress);
+    assert.equal(ps.areaServed, "TH");
+    assert.ok(isAbs(ps.image) && isAbs(ps.url));
+    assert.equal((ps.logo as { "@type": string })["@type"], "ImageObject");
+    assertAbsoluteUrls(ps);
+  });
+  test("links to the Organization by @id instead of restating it", () => {
+    assert.deepEqual(ps.parentOrganization, { "@id": ORGANIZATION_ID });
+  });
+  test("opening hours Mon–Fri 10:00–18:00, no priceRange, no weekend", () => {
+    const spec = ps.openingHoursSpecification as { "@type": string; dayOfWeek: string[]; opens: string; closes: string }[];
+    assert.equal(spec.length, 1);
+    assert.equal(spec[0]["@type"], "OpeningHoursSpecification");
+    assert.deepEqual(spec[0].dayOfWeek, ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
+    assert.equal(spec[0].opens, "10:00");
+    assert.equal(spec[0].closes, "18:00");
+    assert.equal("priceRange" in ps, false);
+  });
+  test("maps link searches the English address", () => {
+    const u = new URL(office.mapsUrl);
+    assert.equal(u.hostname, "www.google.com");
+    assert.equal(u.searchParams.get("query"), office.addressEn);
   });
 });
 

@@ -85,6 +85,15 @@ const nextConfig: NextConfig = {
   // Minimal self-contained server (.next/standalone/server.js) for the Docker
   // image (web/Dockerfile). `next start` keeps working locally.
   output: "standalone",
+  // The post OG route loads next/og with a runtime require (see its comment),
+  // so the tracer cannot see it: ship next/og + its compiled deps explicitly.
+  outputFileTracingIncludes: {
+    "/knowledge/\\[slug\\]/og": [
+      "./node_modules/next/og.js",
+      "./node_modules/next/dist/server/og/**/*",
+      "./node_modules/next/dist/compiled/@vercel/og/**/*",
+    ],
+  },
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,

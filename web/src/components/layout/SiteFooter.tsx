@@ -2,6 +2,7 @@ import Link from "next/link";
 import { nav, site, socials } from "@/content/site";
 import { LogoMark } from "@/components/ui/Logo";
 import { SocialIcon } from "@/components/ui/SocialIcon";
+import { OfficeAddress } from "@/components/layout/OfficeAddress";
 
 export function SiteFooter() {
   return (
@@ -58,6 +59,7 @@ export function SiteFooter() {
               </li>
             ))}
           </ul>
+          <OfficeAddress className="mt-8 max-w-sm" />
         </div>
       </div>
 
