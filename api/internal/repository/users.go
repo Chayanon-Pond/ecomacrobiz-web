@@ -61,11 +61,20 @@ func (r *PGAdminUsers) UpdatePassword(ctx context.Context, id, hash string) erro
 }
 
 func (r *PGAdminUsers) SetPassword(ctx context.Context, id, hash string, at time.Time) error {
-	tag, err := r.db.Exec(ctx, `UPDATE admin_users SET password_hash = $2, password_changed_at = $3 WHERE id = $1`,
-		id, hash, at)
-	if err == nil && tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
-	}
+	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE admin_users SET password_hash = $2, password_changed_at = $3 WHERE id = $1`,
+			id, hash, at)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrNotFound
+		}
+		// A reset link issued before the change must not undo it.
+		_, err = tx.Exec(ctx, `UPDATE user_tokens SET revoked_at = $2
+			WHERE purpose = 'reset' AND user_id = $1 AND used_at IS NULL AND revoked_at IS NULL`, id, at)
+		return err
+	})
 	return mapErr(err)
 }
 
@@ -144,8 +153,13 @@ func (r *PGAdminUsers) UpdateAccess(ctx context.Context, id string, role *domain
 			if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE admin_user_id = $1`, id); err != nil {
 				return err
 			}
+			// Open reset links die with the deactivation (same transaction).
+			if _, err := tx.Exec(ctx, `UPDATE user_tokens SET revoked_at = now()
+				WHERE purpose = 'reset' AND user_id = $1 AND used_at IS NULL AND revoked_at IS NULL`, id); err != nil {
+				return err
+			}
 		}
-		return nil
+		return revokeInvitesBy(ctx, tx, after, false)
 	})
 	return before, after, mapErr(err)
 }
@@ -161,6 +175,9 @@ func (r *PGAdminUsers) Delete(ctx context.Context, id string) (domain.AdminUser,
 			return domain.ErrLastOwner
 		}
 		deleted = u
+		if err := revokeInvitesBy(ctx, tx, u, true); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `DELETE FROM admin_users WHERE id = $1`, id)
 		return err
 	})
@@ -240,4 +257,35 @@ func (r *PGSessions) Touch(ctx context.Context, id string, now time.Time) error 
 	_, err := r.db.Exec(ctx, `UPDATE sessions SET last_seen_at = $2
 		WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < $2::timestamptz - interval '1 minute')`, id, now)
 	return mapErr(err)
+}
+
+// revokeInvitesBy revokes the open invites created by inviter that it can no
+// longer grant (demoted / deactivated) or all of them (deleted). Runs in the
+// caller's transaction; AcceptInvite re-checks the inviter as well.
+func revokeInvitesBy(ctx context.Context, tx pgx.Tx, inviter domain.AdminUser, deleted bool) error {
+	rows, err := tx.Query(ctx, `SELECT id, role FROM user_tokens
+		WHERE purpose = 'invite' AND created_by = $1 AND used_at IS NULL AND revoked_at IS NULL`, inviter.ID)
+	if err != nil {
+		return err
+	}
+	type open struct{ id, role string }
+	invites, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (open, error) {
+		var o open
+		err := row.Scan(&o.id, &o.role)
+		return o, err
+	})
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for _, o := range invites {
+		if deleted || !domain.CanGrant(inviter.Role, inviter.IsActive, domain.Role(o.role)) {
+			ids = append(ids, o.id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err = tx.Exec(ctx, `UPDATE user_tokens SET revoked_at = now() WHERE id = ANY($1::uuid[])`, ids)
+	return err
 }

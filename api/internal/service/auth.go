@@ -102,9 +102,13 @@ func (s *AuthService) Login(ctx context.Context, email, password string, meta Re
 		return LoginResult{}, err
 	}
 	failed := func() {
-		// Attempted email only (to spot brute force); never the password.
-		s.audit.Record(ctx, domain.AuditEvent{Actor: metaActor(meta), Action: domain.AuditLoginFailed,
-			Metadata: map[string]any{"email": truncateRunes(email, 254)}})
+		// Attempted email only when it is a well-formed address (to spot brute
+		// force); anything else may be a password typed into the email field.
+		md := map[string]any{"email_valid": false}
+		if ValidEmail(email) {
+			md = map[string]any{"email": email}
+		}
+		s.audit.Record(ctx, domain.AuditEvent{Actor: metaActor(meta), Action: domain.AuditLoginFailed, Metadata: md})
 	}
 	if err != nil || !user.IsActive || len(password) > MaxPasswordLen {
 		_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))

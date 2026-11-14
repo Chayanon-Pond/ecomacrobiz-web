@@ -48,6 +48,8 @@ type Deps struct {
 	LoginEmailLimiter *ratelimit.Limiter
 	// TokenLimiter: per-IP limit on the public invite/reset token endpoints.
 	TokenLimiter *ratelimit.Limiter
+	// PasswordLimiter: per-user limit on PUT /account/password.
+	PasswordLimiter *ratelimit.Limiter
 }
 
 type handler struct{ Deps }

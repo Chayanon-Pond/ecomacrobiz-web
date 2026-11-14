@@ -138,12 +138,40 @@ func consume(ctx context.Context, tx pgx.Tx, purpose domain.TokenPurpose, hash [
 func (r *PGUserTokens) AcceptInvite(ctx context.Context, hash []byte, now time.Time, u *domain.AdminUser) (domain.UserToken, error) {
 	var tok domain.UserToken
 	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
+		// The invite carries the inviter's authority: it is honoured only while the
+		// inviter still exists, is active and may grant the role. The inviter row
+		// is locked (FOR SHARE) BEFORE the token row, the same order as
+		// UpdateAccess/Delete (admin_users, then user_tokens), so a concurrent
+		// demotion is serialized with this accept instead of deadlocking.
+		var inviterID *string
+		err := tx.QueryRow(ctx, `SELECT created_by FROM user_tokens WHERE token_hash = $1 AND purpose = 'invite'`,
+			hash).Scan(&inviterID)
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && inviterID == nil) {
+			return domain.ErrTokenInvalid
+		}
+		if err != nil {
+			return err
+		}
+		var role string
+		var active bool
+		err = tx.QueryRow(ctx, `SELECT role, is_active FROM admin_users WHERE id = $1 FOR SHARE`, *inviterID).
+			Scan(&role, &active)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrTokenInvalid
+		}
+		if err != nil {
+			return err
+		}
 		id, err := consume(ctx, tx, domain.TokenInvite, hash, now)
 		if err != nil {
 			return err
 		}
 		if tok, err = r.byID(ctx, tx, id); err != nil {
 			return err
+		}
+		if tok.Role == nil || tok.CreatedBy == nil || tok.CreatedBy.ID != *inviterID ||
+			!domain.CanGrant(domain.Role(role), active, *tok.Role) {
+			return domain.ErrTokenInvalid
 		}
 		nu := *u
 		nu.Email = tok.Email

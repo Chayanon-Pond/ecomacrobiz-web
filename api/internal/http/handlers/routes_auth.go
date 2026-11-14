@@ -25,7 +25,7 @@ func (h *handler) registerAuthRoutes(admin, authed *gin.RouterGroup) {
 	authed.GET("/auth/me", anyAuth(), h.me)
 
 	authed.PUT("/account/profile", anyAuth(), small, h.updateProfile)
-	authed.PUT("/account/password", anyAuth(), small, h.changePassword)
+	authed.PUT("/account/password", anyAuth(), h.passwordRateLimit, small, h.changePassword)
 	authed.GET("/account/sessions", anyAuth(), h.listSessions)
 	authed.DELETE("/account/sessions/others", anyAuth(), h.revokeOtherSessions)
 

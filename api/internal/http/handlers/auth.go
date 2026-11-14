@@ -130,6 +130,18 @@ func (h *handler) tokenRateLimit(c *gin.Context) {
 	c.Next()
 }
 
+// passwordRateLimit is the per-user budget of PUT /account/password (guessing
+// the current password with a stolen session); a nil limiter disables it.
+func (h *handler) passwordRateLimit(c *gin.Context) {
+	if h.PasswordLimiter != nil {
+		if ok, wait := h.PasswordLimiter.Allow("user:"+middleware.ActorFrom(c).ID, time.Now()); !ok {
+			middleware.AbortRateLimited(c, wait)
+			return
+		}
+	}
+	c.Next()
+}
+
 type tokenBody struct {
 	Token string `json:"token"`
 }

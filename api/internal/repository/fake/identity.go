@@ -37,7 +37,15 @@ func (r users) List(context.Context) ([]domain.AdminUser, error) {
 }
 
 func (r users) SetPassword(_ context.Context, id, hash string, at time.Time) error {
-	return r.update(id, func(u *domain.AdminUser) { u.PasswordHash, u.PasswordChangedAt = hash, &at })
+	if err := r.update(id, func(u *domain.AdminUser) { u.PasswordHash, u.PasswordChangedAt = hash, &at }); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.revokeWhereLocked(at, func(t domain.UserToken) bool {
+		return t.Purpose == domain.TokenReset && t.UserID != nil && *t.UserID == id
+	})
+	return nil
 }
 
 func (r users) RestoreOwner(_ context.Context, id string) error {
@@ -84,7 +92,11 @@ func (r users) UpdateAccess(_ context.Context, id string, role *domain.Role, act
 		r.users[i] = next
 		if before.IsActive && !next.IsActive {
 			r.sessions = slices.DeleteFunc(r.sessions, func(s domain.Session) bool { return s.AdminUserID == id })
+			r.revokeWhereLocked(r.Now().UTC(), func(t domain.UserToken) bool {
+				return t.Purpose == domain.TokenReset && t.UserID != nil && *t.UserID == id
+			})
 		}
+		r.revokeInvitesByLocked(next, false)
 		return before, next, nil
 	}
 	return domain.AdminUser{}, domain.AdminUser{}, domain.ErrNotFound
@@ -100,6 +112,7 @@ func (r users) Delete(_ context.Context, id string) (domain.AdminUser, error) {
 		if activeOwner(u) && r.activeOwnersLocked() <= 1 {
 			return domain.AdminUser{}, domain.ErrLastOwner
 		}
+		r.revokeInvitesByLocked(u, true)
 		r.users = slices.Delete(r.users, i, i+1)
 		r.sessions = slices.DeleteFunc(r.sessions, func(s domain.Session) bool { return s.AdminUserID == id })
 		return u, nil
@@ -251,11 +264,24 @@ func (r tokens) RevokeInvite(_ context.Context, id string, now time.Time) (domai
 func (r tokens) revokeWhere(now time.Time, fn func(domain.UserToken) bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for i := range r.tokens {
-		if r.tokens[i].Open() && fn(r.tokens[i]) {
-			r.tokens[i].RevokedAt = &now
+	r.revokeWhereLocked(now, fn)
+}
+
+func (s *Store) revokeWhereLocked(now time.Time, fn func(domain.UserToken) bool) {
+	for i := range s.tokens {
+		if s.tokens[i].Open() && fn(s.tokens[i]) {
+			s.tokens[i].RevokedAt = &now
 		}
 	}
+}
+
+// revokeInvitesByLocked revokes open invites created by inviter that it can
+// no longer grant (mirrors repository.revokeInvitesBy).
+func (s *Store) revokeInvitesByLocked(inviter domain.AdminUser, deleted bool) {
+	s.revokeWhereLocked(s.Now().UTC(), func(t domain.UserToken) bool {
+		return t.Purpose == domain.TokenInvite && t.CreatedBy != nil && t.CreatedBy.ID == inviter.ID &&
+			(deleted || !domain.CanGrant(inviter.Role, inviter.IsActive, *t.Role))
+	})
 }
 
 func (r tokens) RevokeOpenInvitesFor(_ context.Context, email string, now time.Time) error {
@@ -307,6 +333,9 @@ func (r tokens) AcceptInvite(_ context.Context, hash []byte, now time.Time, u *d
 		if strings.EqualFold(x.Email, t.Email) {
 			return domain.UserToken{}, domain.ErrConflict // tx rolled back: token stays open
 		}
+	}
+	if !r.inviterCanGrantLocked(t) {
+		return domain.UserToken{}, domain.ErrTokenInvalid
 	}
 	nu := *u
 	nu.ID = uuid.NewString()
@@ -418,4 +447,18 @@ func (s *Store) AuditEntries() []domain.AuditEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.audit)
+}
+
+// inviterCanGrantLocked: the inviter still exists, is active and may grant
+// the invite's role (mirrors the check inside the Postgres AcceptInvite tx).
+func (s *Store) inviterCanGrantLocked(t domain.UserToken) bool {
+	if t.CreatedBy == nil || t.Role == nil {
+		return false
+	}
+	for _, u := range s.users {
+		if u.ID == t.CreatedBy.ID {
+			return domain.CanGrant(u.Role, u.IsActive, *t.Role)
+		}
+	}
+	return false
 }

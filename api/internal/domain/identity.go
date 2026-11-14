@@ -76,3 +76,10 @@ func Elevates(from, to Role) bool {
 	}
 	return false
 }
+
+// CanGrant reports whether an inviter with role from (active or not) may
+// hand out role to: it must be active, hold users:manage and not elevate.
+// Checked when an invite is created and again when it is accepted.
+func CanGrant(from Role, active bool, to Role) bool {
+	return active && from.Has(PermUsersManage) && !Elevates(from, to)
+}

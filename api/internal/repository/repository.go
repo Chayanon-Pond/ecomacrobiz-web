@@ -116,7 +116,8 @@ type AdminUsers interface {
 
 	// List returns all users (incl. inactive): owners first, then by name.
 	List(ctx context.Context) ([]domain.AdminUser, error)
-	// SetPassword stores a new hash and password_changed_at.
+	// SetPassword stores a new hash and password_changed_at and, in the same
+	// transaction, revokes the user's open password-reset links.
 	SetPassword(ctx context.Context, id, hash string, at time.Time) error
 	// UpdateAccess changes role and/or is_active in one transaction that
 	// locks the active owners (SELECT ... FOR UPDATE) and returns

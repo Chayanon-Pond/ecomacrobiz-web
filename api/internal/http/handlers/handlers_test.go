@@ -117,6 +117,7 @@ func newEnv(t *testing.T) *env {
 		LoginIPLimiter:    ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per),
 		LoginEmailLimiter: ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per),
 		TokenLimiter:      ratelimit.New(20, 10*time.Minute),
+		PasswordLimiter:   ratelimit.New(5, 15*time.Minute),
 		Users: service.NewUserService(store.AdminUsersRepo(), store.SessionsRepo(), store.TokensRepo(), auth, audit, mail,
 			service.UserServiceConfig{InviteTTL: cfg.InviteTTL, WebBaseURL: cfg.WebBaseURL}, discard),
 		Account: service.NewAccountService(store.AdminUsersRepo(), store.SessionsRepo(), auth, audit, discard),

@@ -78,7 +78,8 @@ func canGrant(actor domain.Actor, r domain.Role) error {
 
 // Update changes a user's role and/or active flag. Last-owner protection is
 // enforced by the repository under row locks; deactivation deletes the
-// user's sessions in the same transaction and revokes open reset links.
+// user's sessions and revokes their open reset links in the same transaction,
+// and invites the user can no longer grant (demotion/deactivation) are revoked.
 func (s *UserService) Update(ctx context.Context, actor domain.Actor, id string, in UserPatch) (domain.AdminUser, error) {
 	var v domain.Validator
 	var role *domain.Role
@@ -116,9 +117,6 @@ func (s *UserService) Update(ctx context.Context, actor domain.Actor, id string,
 	}
 	switch {
 	case before.IsActive && !after.IsActive:
-		if err := s.tokens.RevokeOpenResetsFor(ctx, after.ID, s.Now().UTC()); err != nil {
-			s.log.Warn("revoke reset links on deactivate failed", "user_id", after.ID, "err", err)
-		}
 		ev(domain.AuditUserDeactivate, map[string]any{"email": after.Email})
 	case !before.IsActive && after.IsActive:
 		ev(domain.AuditUserReactivate, map[string]any{"email": after.Email})

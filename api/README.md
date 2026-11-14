@@ -236,18 +236,18 @@ permission is `403 forbidden` with a Thai message.
 
 | Method | Path | Permission | Notes |
 | --- | --- | --- | --- |
-| POST | `/auth/login` | public (Origin + login limits) | → MeDTO. Audited `auth.login` / `auth.login_failed` (`{email}` only) |
+| POST | `/auth/login` | public (Origin + login limits) | → MeDTO. Audited `auth.login` / `auth.login_failed` (`{email}` only when it is a valid address, else `{email_valid:false}`, so a password typed into the email field is never stored) |
 | POST | `/auth/logout` | any signed-in | 204, `auth.logout` |
 | GET | `/auth/me` | any signed-in | MeDTO |
 | POST | `/auth/tokens/inspect` | public (Origin, 20/10m per IP) | `{token}` → `{purpose:"invite"\|"reset", email, role\|null, name, expires_at}`; bad/used/revoked/expired → 404 `token_invalid` |
 | POST | `/auth/tokens/accept` | public (same limiter) | `{token, name, password}` (password 12–72 bytes; name 1–100, required for invites only) → sets the session cookie → MeDTO |
 | PUT | `/account/profile` | any signed-in | `{name}` → UserDTO |
-| PUT | `/account/password` | any signed-in | `{current_password, new_password}` → 204; wrong current → 422 `fields.current_password`; signs out every OTHER session |
+| PUT | `/account/password` | any signed-in | `{current_password, new_password}` → 204; wrong current → 422 `fields.current_password`; signs out every OTHER session and revokes the user's open reset links (same transaction as the new hash); 5 attempts per user per 15 min, then 429 `rate_limited` + `Retry-After` |
 | GET | `/account/sessions` | any signed-in | `[{id, ip, user_agent, created_at, last_seen_at\|null, expires_at, current}]` newest first |
 | DELETE | `/account/sessions/others` | any signed-in | → `{revoked: n}` |
 | GET | `/users` | `users:read` | all users incl. inactive, owners first, then name |
-| PATCH | `/users/:id` | `users:manage` | `{role?, is_active?}` → UserDTO. 409 `last_owner` if no active owner would remain; deactivation deletes the user's sessions at once; nobody can raise their own role (403) |
-| DELETE | `/users/:id` | `users:manage` | 204; self → 422; last active owner → 409 `last_owner` |
+| PATCH | `/users/:id` | `users:manage` | `{role?, is_active?}` → UserDTO. 409 `last_owner` if no active owner would remain; deactivation deletes the user's sessions and revokes their open reset links in the same transaction; demotion/deactivation also revokes the open invites the user can no longer grant; nobody can raise their own role (403) |
+| DELETE | `/users/:id` | `users:manage` | 204; self → 422; last active owner → 409 `last_owner`; the user's open invites are revoked in the same transaction |
 | POST | `/users/:id/reset-link` | `users:manage` | → `{token, expires_at, email_sent}`; revokes the user's previous open reset links; inactive user → 422 |
 | GET | `/invites` | `users:read` | open invites (not used/revoked, incl. expired with `expired:true`), `invited_by: UserRef\|null` |
 | POST | `/invites` | `users:manage` | `{email, role}` → 201 `{invite, token, email_sent}`; existing account → 409 `conflict`; an open invite for the same email is revoked first |
@@ -283,6 +283,10 @@ permission is `403 forbidden` with a Thai message.
    tokens all return the same 404 `token_invalid`. Accepting an invite whose
    email already has an account (active or not) returns 409 `conflict` and
    leaves the invite unused.
+   An invite carries its inviter's authority: accept locks the inviter row
+   (`FOR SHARE`, before the token row) and re-checks in the same transaction
+   that the inviter still exists, is active and may grant the role
+   (`domain.CanGrant`); otherwise 404 `token_invalid` and nothing changes.
 
 **Last-owner rule.** Role/active changes and deletes run in one transaction
 that locks every active owner row (`SELECT … FOR UPDATE`, id order) and

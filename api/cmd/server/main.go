@@ -245,8 +245,9 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	contactLim := ratelimit.New(cfg.ContactRateLimit.Events, cfg.ContactRateLimit.Per)
 	loginIPLim := ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per)
 	loginEmailLim := ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per)
-	tokenLim := ratelimit.New(20, 10*time.Minute) // public invite/reset token endpoints, per IP
-	for _, l := range []*ratelimit.Limiter{contactLim, loginIPLim, loginEmailLim, tokenLim} {
+	tokenLim := ratelimit.New(20, 10*time.Minute)   // public invite/reset token endpoints, per IP
+	passwordLim := ratelimit.New(5, 15*time.Minute) // PUT /account/password, per user
+	for _, l := range []*ratelimit.Limiter{contactLim, loginIPLim, loginEmailLim, tokenLim, passwordLim} {
 		l.StartJanitor(time.Minute)
 		defer l.Stop()
 	}
@@ -266,6 +267,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		LoginIPLimiter:    loginIPLim,
 		LoginEmailLimiter: loginEmailLim,
 		TokenLimiter:      tokenLim,
+		PasswordLimiter:   passwordLim,
 		Users:             users,
 		Account:           service.NewAccountService(store.AdminUsers, store.Sessions, auth, audit, log),
 		Audit:             audit,
