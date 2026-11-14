@@ -203,11 +203,22 @@ const maxKeySlug = 60
 // (else the original file name without extension), at most 60 characters,
 // plus 8 random hex digits: "<slug>-<8hex>.<ext>" ("image-<8hex>.<ext>"
 // when nothing ASCII is usable, e.g. Thai-only text).
+// minKeySlug: shorter slugs carry no meaning and fall back to "image".
+const minKeySlug = 3
+
 func MediaKey(alt, originalName, ext string) string {
+	// Thai alt text often slugifies to a stray Latin fragment (e.g. "g"):
+	// use the alt only when it yields a meaningful slug, else the filename,
+	// else whichever of the two is longer.
 	slug := Slugify(alt)
-	if slug == "" {
+	if len(slug) < minKeySlug {
 		base := filepath.Base(strings.ReplaceAll(originalName, `\`, "/"))
-		slug = Slugify(strings.TrimSuffix(base, filepath.Ext(base)))
+		if fromName := Slugify(strings.TrimSuffix(base, filepath.Ext(base))); len(fromName) > len(slug) {
+			slug = fromName
+		}
+	}
+	if len(slug) < minKeySlug {
+		slug = ""
 	}
 	if len(slug) > maxKeySlug {
 		slug = strings.TrimRight(slug[:maxKeySlug], "-")

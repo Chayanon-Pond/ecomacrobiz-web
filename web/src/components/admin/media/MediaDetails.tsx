@@ -186,7 +186,7 @@ export function MediaDetails({
                     <Link href={`/admin/posts/${encodeURIComponent(u.post_id)}`} className="min-w-0 flex-1 truncate hover:underline">
                       {u.title || u.slug}
                     </Link>
-                    <Badge tone="neutral">{u.kind === "cover" ? "รูปปก" : "ในเนื้อหา"}</Badge>
+                    <Badge tone="neutral">{u.kind === "cover" ? "รูปปก" : u.kind === "og" ? "ภาพแชร์ (OG)" : "ในเนื้อหา"}</Badge>
                     <PostStatusBadge status={u.status} />
                     {u.status === "published" ? (
                       <a

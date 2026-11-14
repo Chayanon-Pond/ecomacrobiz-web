@@ -114,7 +114,7 @@ export type MediaUsage = {
   title: string;
   slug: string;
   status: PostStatus;
-  kind: "cover" | "body";
+  kind: "cover" | "body" | "og";
 };
 
 export type MediaDetail = Media & { usage: MediaUsage[] };
