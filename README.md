@@ -208,3 +208,21 @@ are checked against live posts, so they never link to a 404. Tests: `cd web && n
 Gone; BlogPosting/BreadcrumbList/Organization/WebSite/ProfessionalService JSON-LD; auto OG image
 (`/knowledge/<slug>/og`, bundled IBM Plex Sans Thai in `web/assets/fonts`); optional IndexNow (`INDEXNOW_KEY`).
 Writer's guide (Thai): `docs/SEO-GUIDE.md`.
+
+**Status.** Complete on `Develop` (commits `603edae..HEAD`, not pushed/deployed): migrations `00003_admin_v2` +
+`00004_seo`, RBAC + users/invites/audit, scheduler, media processing, leads CRM, Tiptap editor, SEO/redirects/410,
+public JSON-LD/OG/sitemap. Verified locally with `go test`, web `tsc`/`lint`/`test`/`build`, and one end-to-end
+run on a throwaway DB against the production web build (logged-out `/admin*` → 307 from `proxy.ts`; owner login;
+draft + drag-drop image + cover/alt + SEO fields; schedule → published by the scheduler → on `/knowledge`,
+category, sitemap, RSS, article 200 with SEO title/canonical/BlogPosting JSON-LD; unpublish (410) → 410 and gone
+from listings; delete) and a crawl of all sitemap + nav/footer URLs (no broken links, no duplicate titles or
+descriptions, exactly one `<h1>` per page).
+
+**Known gaps.**
+- Mobile Lighthouse Performance measured 85–87 locally vs the 90 target — re-measure with PageSpeed Insights after
+  deploy (DEPLOY.md step 4). Public JS bundle is +0.4 KB gz after the Admin v2 / SEO work.
+- `/knowledge/category/<unknown>` answers 200 + `noindex` (soft 404) instead of 404.
+- JPEG re-encode drops the embedded ICC colour profile (wide-gamut photos may shift slightly); GIF and AVIF uploads
+  are stored as-is (not resized or metadata-stripped).
+- Audit logs are kept forever (no retention job).
+- Invite/reset e-mail (Resend/SMTP) and IndexNow submission are implemented but untested against the live services.
