@@ -129,7 +129,7 @@ export function MediaDetails({
       }
     >
       {view ? (
-        <div className="grid gap-5">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
           <a href={view.url} target="_blank" rel="noopener" className="md-detail-preview" aria-label="เปิดไฟล์ต้นฉบับในแท็บใหม่">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={view.url} alt={view.alt || ""} />
@@ -165,7 +165,7 @@ export function MediaDetails({
             </div>
           )}
 
-          <section aria-labelledby="md-usage-title" className="grid gap-2">
+          <section aria-labelledby="md-usage-title" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
             <h3 id="md-usage-title" className="text-sm font-semibold">
               ใช้งานในบทความ
             </h3>

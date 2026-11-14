@@ -1,0 +1,460 @@
+/* Block editor (admin only). The content element also carries .prose-article
+ * (components/content/prose.css) so the editing surface uses the public
+ * article typography. Prefix ed-. */
+@layer components {
+
+.ed-shell {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--adm-radius-lg);
+  background: var(--ink-2);
+}
+.ed-shell:focus-within {
+  border-color: var(--adm-accent-border);
+}
+.ed-shell[data-invalid] {
+  border-color: var(--adm-danger-border);
+}
+.ed-loading {
+  min-height: 24rem;
+}
+
+.ed-toolbar,
+.ed-tablebar {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+.ed-toolbar {
+  position: sticky;
+  top: var(--ed-sticky-top, var(--adm-topbar-h, 0px));
+  z-index: 6;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--adm-radius-lg) var(--adm-radius-lg) 0 0;
+}
+.ed-tablebar {
+  border-bottom: 1px solid var(--line);
+  background: var(--adm-accent-bg);
+}
+.ed-tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  padding: 0 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--adm-radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.ed-tb:hover:not(:disabled) {
+  background: var(--adm-hover);
+  color: var(--fg);
+}
+.ed-tb[aria-pressed="true"] {
+  background: var(--adm-accent-bg);
+  border-color: var(--adm-accent-border);
+  color: var(--adm-accent-text);
+}
+.ed-tb:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ed-tb:focus-visible {
+  outline: 2px solid var(--adm-focus);
+  outline-offset: 1px;
+}
+.ed-tb-text {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.ed-tb-sep {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 0.25rem;
+  flex-shrink: 0;
+  background: var(--line-strong);
+}
+.ed-tb-grow {
+  flex: 1;
+}
+
+.ed-bubble {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--adm-radius);
+  background: var(--surface-2);
+  box-shadow: var(--adm-elev-2);
+  z-index: 30;
+}
+
+/* ---- editing surface ---- */
+.ed-surface {
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1rem, 4vw, 3.5rem) 2rem;
+}
+.ed-content.prose-article {
+  margin: 0 auto;
+  min-height: 24rem;
+  outline: none;
+}
+/* The shell border shows focus; no ring around the whole document. */
+.ed-content.prose-article:focus,
+.ed-content.prose-article:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+html[data-adm-theme="light"] .ed-content.prose-article {
+  --prose-body: rgb(14 15 22 / 0.86);
+}
+.ed-content p.is-empty::before,
+.ed-content h1.is-empty::before,
+.ed-content h2.is-empty::before,
+.ed-content h3.is-empty::before,
+.ed-content h4.is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--subtle);
+  pointer-events: none;
+}
+.ed-content ::selection {
+  background: rgb(15 52 255 / 0.35);
+}
+.ed-content .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 0.5rem;
+}
+
+/* task lists */
+.ed-content ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.ed-content ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6em;
+}
+.ed-content ul[data-type="taskList"] li > label {
+  margin-top: 0.45em;
+  flex-shrink: 0;
+}
+.ed-content ul[data-type="taskList"] li > label input {
+  width: 1em;
+  height: 1em;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ed-content ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.ed-content ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* tables: same frame as the public .prose-table */
+.ed-content .tableWrapper {
+  margin: 2em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.ed-content .tableWrapper table {
+  margin: 0;
+}
+.ed-content td,
+.ed-content th {
+  position: relative;
+  min-width: 6rem;
+}
+.ed-content td p,
+.ed-content th p {
+  margin: 0;
+}
+.ed-content .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(15 52 255 / 0.18);
+  pointer-events: none;
+}
+
+/* verbatim Markdown atoms */
+.ed-content pre.ed-raw {
+  font-size: 0.85em;
+  border-style: dashed;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+.ed-content pre.ed-raw::before {
+  content: "Markdown (แก้ไขไม่ได้ในตัวแก้ไขนี้)";
+  display: block;
+  margin-bottom: 0.4em;
+  font-family: var(--ff-thai), system-ui, sans-serif;
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.ed-content code.ed-raw-inline {
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+}
+
+/* image blocks */
+.ed-figure {
+  display: block;
+  margin: 2.2em 0;
+}
+.ed-figure-media {
+  position: relative;
+}
+.ed-content .ed-figure-media img {
+  margin: 0;
+}
+.ed-figure[data-selected] .ed-figure-media img {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.ed-figure[data-uploading] .ed-figure-media img {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+.ed-figure-grip {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.ed-figure:hover .ed-figure-grip,
+.ed-figure[data-selected] .ed-figure-grip {
+  opacity: 1;
+}
+@media (hover: none) {
+  .ed-figure-grip {
+    opacity: 1;
+  }
+}
+.ed-figure-del {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  cursor: pointer;
+}
+.ed-figure-del:hover {
+  background: #c62828;
+}
+.ed-figure-progress {
+  position: absolute;
+  inset: auto 0.75rem 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  background: rgb(0 0 0 / 0.7);
+  color: #fff;
+  font-size: 0.8rem;
+}
+.ed-bar {
+  display: block;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.2);
+  overflow: hidden;
+}
+.ed-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+.ed-figure-fields {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.6em;
+  font-family: var(--ff-thai), system-ui, sans-serif;
+  line-height: 1.5;
+}
+.ed-caption-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--muted);
+  padding: 0.2rem;
+  border-radius: 0.4rem;
+}
+.ed-caption-input:focus {
+  outline: 1px solid var(--adm-accent-border);
+  color: var(--fg);
+}
+.ed-alt {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  cursor: text;
+}
+.ed-alt[data-missing] {
+  border-color: var(--adm-warning-border);
+  color: var(--adm-warning);
+}
+.ed-alt:focus-within {
+  border-color: var(--adm-accent-border);
+}
+.ed-alt input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+.ed-alt-tag {
+  font-family: var(--ff-display), system-ui, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* slash menu */
+.ed-slash {
+  position: fixed;
+  z-index: 40;
+  width: min(18rem, calc(100vw - 1rem));
+  max-height: min(22rem, 60vh);
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--adm-radius);
+  background: var(--surface);
+  box-shadow: var(--adm-elev-2);
+}
+.ed-slash-head {
+  padding: 0.3rem 0.5rem 0.4rem;
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.ed-slash-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--adm-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.ed-slash-item[aria-selected="true"] {
+  background: var(--adm-accent-bg);
+}
+.ed-slash-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: var(--ink-2);
+  color: var(--fg);
+}
+
+.ed-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ed-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ed-footer-link:hover {
+  color: var(--fg);
+}
+
+.ed-keys {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+}
+.ed-keys > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.ed-keys dt {
+  color: var(--muted);
+}
+.ed-keys dd {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-tb,
+  .ed-figure-grip,
+  .ed-bar > span {
+    transition: none;
+  }
+}
+}

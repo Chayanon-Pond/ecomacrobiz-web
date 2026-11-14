@@ -211,6 +211,8 @@
   gap: 0.35rem;
 }
 .md-usage-list li {
+  min-width: 0;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 0.5rem;

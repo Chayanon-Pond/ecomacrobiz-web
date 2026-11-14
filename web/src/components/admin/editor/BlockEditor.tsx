@@ -122,8 +122,6 @@ export default function BlockEditor({
         role: "textbox",
         "aria-multiline": "true",
         "aria-label": "เนื้อหาบทความ",
-        ...(invalid ? { "aria-invalid": "true" } : {}),
-        ...(describedBy ? { "aria-describedby": describedBy } : {}),
       },
       handleKeyDown: (_view, event) => {
         if (slashKey.current?.(event)) {
@@ -160,15 +158,25 @@ export default function BlockEditor({
         return true;
       },
     },
+    onCreate: ({ editor: ed }) => {
+      const text = ed.getText({ blockSeparator: " " });
+      setStats({ words: countWords(text), chars: countChars(text) });
+    },
     onUpdate: ({ editor: ed }) => {
       if (emitTimer.current) clearTimeout(emitTimer.current);
       emitTimer.current = setTimeout(() => emit(ed), EMIT_DELAY);
     },
   });
 
+  // Serialization of the untouched document. Edits that come back to it (and
+  // Tiptap's own normalizing transactions, e.g. the trailing paragraph) report
+  // the ORIGINAL Markdown, so merely opening a post never rewrites its body.
+  const [baseline] = useState(() => docToMarkdown(markdownToDoc(initialMarkdown)));
+
   function emit(ed: Editor): string {
     emitTimer.current = null;
-    const md = docToMarkdown(ed.getJSON());
+    const out = docToMarkdown(ed.getJSON());
+    const md = out === baseline ? initialMarkdown : out;
     if (md !== lastEmitted.current) {
       lastEmitted.current = md;
       changeRef.current(md);
@@ -178,11 +186,9 @@ export default function BlockEditor({
     return md;
   }
 
-  // Initial stats + API for the page (flush before save, focus on error).
+  // API for the page (flush before save, focus on error).
   useEffect(() => {
     if (!editor) return;
-    const text = editor.getText({ blockSeparator: " " });
-    setStats({ words: countWords(text), chars: countChars(text) });
     onReady?.({
       flush: () => {
         if (emitTimer.current) {
@@ -200,6 +206,17 @@ export default function BlockEditor({
     editor?.setEditable(editable);
   }, [editor, editable]);
 
+  // Validation state lives on the contenteditable itself for screen readers.
+  useEffect(() => {
+    const dom = editor?.view.dom;
+    if (!dom) return;
+    if (invalid) dom.setAttribute("aria-invalid", "true");
+    else dom.removeAttribute("aria-invalid");
+    if (describedBy) dom.setAttribute("aria-describedby", describedBy);
+    else dom.removeAttribute("aria-describedby");
+  }, [editor, invalid, describedBy]);
+
+  // Flush a pending emit when the editor goes away (only on editor change/unmount).
   useEffect(
     () => () => {
       if (emitTimer.current && editor) {

@@ -234,8 +234,8 @@ function inline(nodes: PhrasingContent[], marks: Mark[], ctx: Ctx): JSONContent[
 
 export function docToMarkdown(doc: JSONContent): string {
   const root: Root = { type: "root", children: toBlocks(doc.content ?? []) as RootContent[] };
-  const md = stringifier.stringify(root);
-  return md.replace(/\n+$/, "") + "\n";
+  const md = stringifier.stringify(root).replace(/\n+$/, "");
+  return md ? `${md}\n` : "";
 }
 
 function toBlocks(nodes: JSONContent[]): BlockContent[] {

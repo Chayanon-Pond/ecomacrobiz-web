@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PostsList } from "@/components/admin/PostsList";
+import { PostsList } from "@/components/admin/posts/PostsList";
 
 export const metadata: Metadata = { title: "บทความ" };
 // Client-rendered behind the session check: nothing to prerender for instant navigation.

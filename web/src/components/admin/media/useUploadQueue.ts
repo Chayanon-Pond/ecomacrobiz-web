@@ -30,6 +30,7 @@ export function useUploadQueue(onUploaded?: (m: Media) => void) {
   const queue = useRef<number[]>([]);
   const seq = useRef(0);
   const running = useRef(0);
+  const pumpRef = useRef<() => void>(() => {});
   const cb = useRef(onUploaded);
   useEffect(() => {
     cb.current = onUploaded;
@@ -56,10 +57,13 @@ export function useUploadQueue(onUploaded?: (m: Media) => void) {
         .finally(() => {
           running.current--;
           files.current.delete(id);
-          pump();
+          pumpRef.current();
         });
     }
   }, [upload, patch]);
+  useEffect(() => {
+    pumpRef.current = pump;
+  }, [pump]);
 
   const add = useCallback(
     (list: FileList | File[]) => {
