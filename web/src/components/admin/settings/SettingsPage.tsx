@@ -1,7 +1,7 @@
 "use client";
 
 /** /admin/settings — read-only overview of server configuration (no secrets). */
-import { Clock, Globe, Mail, MessageCircle, Server, Upload, type LucideIcon } from "lucide-react";
+import { Clock, Globe, Mail, MessageCircle, Server, Upload, UsersRound, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { SettingsOverview } from "@/lib/admin/types";
 import { errorMessage, useAdmin } from "../SessionProvider";
@@ -20,6 +20,18 @@ function Configured({ ok }: { ok: boolean }) {
   ) : (
     <Badge tone="warning" dot>
       ยังไม่ได้ตั้งค่า
+    </Badge>
+  );
+}
+
+function OnOff({ on }: { on: boolean }) {
+  return on ? (
+    <Badge tone="success" dot>
+      เปิด
+    </Badge>
+  ) : (
+    <Badge tone="neutral" dot>
+      ปิด
     </Badge>
   );
 }
@@ -173,6 +185,33 @@ export function SettingsPage() {
           <dt>ชนิดไฟล์</dt>
           <dd>JPEG, PNG, WebP, AVIF, GIF</dd>
         </SettingCard>
+
+        {data.members ? (
+          <SettingCard icon={UsersRound} title="สมาชิกและความคิดเห็น">
+            <dt>เข้าสู่ระบบด้วย Google</dt>
+            <dd>
+              <OnOff on={data.members.google_enabled} />
+            </dd>
+            <dt>ต้องยืนยันอีเมลก่อนแสดงความคิดเห็น</dt>
+            <dd>
+              <OnOff on={data.members.require_verified_email} />
+            </dd>
+            <dt>ความคิดเห็นแรกของสมาชิกใหม่รอตรวจ</dt>
+            <dd>
+              <OnOff on={data.members.hold_first_comment} />
+            </dd>
+            <dt>Cloudflare Turnstile</dt>
+            <dd>
+              <OnOff on={data.members.turnstile_enabled} />
+            </dd>
+            <dt>คีย์เข้ารหัสข้อมูลสมาชิก</dt>
+            <dd>
+              {data.members.data_key_ids.length
+                ? data.members.data_key_ids.map((id, i) => `#${id}${i === 0 ? " (คีย์หลัก)" : ""}`).join(", ")
+                : "—"}
+            </dd>
+          </SettingCard>
+        ) : null}
       </div>
     </>
   );

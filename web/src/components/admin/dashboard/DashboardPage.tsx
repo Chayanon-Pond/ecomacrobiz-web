@@ -8,6 +8,8 @@ import {
   FilePen,
   FilePlus2,
   FileText,
+  Flag,
+  MessageSquareDot,
   PhoneCall,
   Send,
   UserPlus,
@@ -18,7 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { downloadResponse, toApiError } from "@/lib/admin/client";
 import { formatDateTime, LEAD_STATUSES, POST_STATUS_LABEL } from "@/lib/admin/format";
 import { formatRelative, todayLong } from "@/lib/admin/time";
-import type { Dashboard as DashboardData, Lead, PostSummary } from "@/lib/admin/types";
+import type { AdminCommentList, CommentCounts, Dashboard as DashboardData, Lead, PostSummary } from "@/lib/admin/types";
 import { LeadsDailyChart } from "./LeadsDailyChart";
 import { leadName } from "../leads/lead-utils";
 import { alreadyNotified, errorMessage, useAdmin } from "../SessionProvider";
@@ -39,6 +41,9 @@ export function DashboardPage() {
   const [reload, setReload] = useState(0);
   const [exporting, setExporting] = useState(false);
   const allowed = canAny("posts:read", "leads:read");
+  const moderator = can("comments:moderate");
+  const [commentCounts, setCommentCounts] = useState<CommentCounts | null>(null);
+  const [commentsFailed, setCommentsFailed] = useState(false);
 
   useEffect(() => {
     if (!allowed) return;
@@ -54,6 +59,21 @@ export function DashboardPage() {
       });
     return () => ctrl.abort();
   }, [request, reload, allowed]);
+
+  // One small request: the comments list returns the queue counts alongside a single row.
+  useEffect(() => {
+    if (!moderator) return;
+    const ctrl = new AbortController();
+    request<AdminCommentList>("comments", { query: { status: "pending", per_page: 1 }, signal: ctrl.signal })
+      .then((r) => {
+        setCommentCounts(r.counts ?? { pending: 0, reported: 0 });
+        setCommentsFailed(false);
+      })
+      .catch((err) => {
+        if (errorMessage(err)) setCommentsFailed(true);
+      });
+    return () => ctrl.abort();
+  }, [request, moderator, reload]);
 
   const exportCsv = useCallback(async () => {
     setExporting(true);
@@ -214,6 +234,31 @@ export function DashboardPage() {
                     </span>
                   ) : null
                 }
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {moderator && !commentsFailed ? (
+          <section aria-labelledby="dash-comments" className="grid min-w-0 grid-cols-1 gap-3">
+            <h2 id="dash-comments" className="text-base font-semibold">
+              ความคิดเห็น
+            </h2>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              <StatCard
+                label="ความคิดเห็นรอตรวจ"
+                icon={<MessageSquareDot size={16} aria-hidden="true" />}
+                value={commentCounts?.pending}
+                loading={commentCounts === null}
+                href="/admin/comments?status=pending"
+                foot={<span className="adm-stat-foot">{commentCounts?.pending ? "รออนุมัติก่อนแสดงบนเว็บไซต์" : "ไม่มีรายการค้าง"}</span>}
+              />
+              <StatCard
+                label="ถูกรายงาน"
+                icon={<Flag size={16} aria-hidden="true" />}
+                value={commentCounts?.reported}
+                loading={commentCounts === null}
+                href="/admin/comments?status=reported"
               />
             </div>
           </section>

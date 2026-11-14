@@ -251,6 +251,16 @@ export type SettingsOverview = {
   max_upload_mb: number;
   scheduler_interval_seconds: number;
   migrate_on_start: boolean;
+  /** Community members/comments config (no secrets). Absent on older APIs. */
+  members?: MembersOverview;
+};
+
+export type MembersOverview = {
+  google_enabled: boolean;
+  require_verified_email: boolean;
+  hold_first_comment: boolean;
+  turnstile_enabled: boolean;
+  data_key_ids: number[];
 };
 
 /* ---------------- SEO: redirects ---------------- */
@@ -269,3 +279,61 @@ export type Redirect = {
 };
 export type RedirectInput = { from: string; to: string | null; status: RedirectStatus; note: string };
 export type LinkSuggestion = { id: string; title: string; slug: string; url: string };
+
+/* ---------------- community: comments & members ---------------- */
+
+export type CommentStatus = "published" | "pending" | "hidden" | "deleted";
+/** Admin list filter: a status, comments with reports, or everything. */
+export type CommentFilter = CommentStatus | "reported" | "all";
+export type MemberRole = "member" | "trusted" | "moderator" | "banned";
+export type ReportReason = "spam" | "harassment" | "inappropriate" | "other";
+
+export type AdminComment = {
+  id: string;
+  post: { slug: string; title: string };
+  parent_id: string | null;
+  /** null = the member deleted their account. */
+  author: { id: string; display_name: string; role: MemberRole } | null;
+  body: string;
+  /** Server-sanitized HTML (strong/em/a/br only). */
+  body_html: string;
+  image: { url: string; width: number; height: number } | null;
+  status: CommentStatus;
+  like_count: number;
+  report_count: number;
+  /** Up to 10 most recent. */
+  reports: { reason: ReportReason | string; note: string; created_at: string }[];
+  created_at: string;
+  edited_at: string | null;
+  moderated_at: string | null;
+  moderated_by: { kind: "admin" | "member"; name: string } | null;
+};
+
+export type CommentCounts = { pending: number; reported: number };
+/** GET /comments: `counts` is a sibling of data/meta. */
+export type AdminCommentList = ListResponse<AdminComment> & { counts: CommentCounts };
+
+export type CommentBulkAction = "approve" | "hide" | "delete";
+/** POST /comments/bulk -> {data: CommentBulkResult} */
+export type CommentBulkResult = BulkResult;
+
+export type CommentEdit = { body: string; edited_at: string };
+
+export type AdminMember = {
+  id: string;
+  display_name: string;
+  email_masked: string;
+  /** Only for actors with users:manage. */
+  email?: string;
+  email_verified: boolean;
+  role: MemberRole;
+  avatar_url: string | null;
+  providers: ("password" | "google" | string)[];
+  comment_count: number;
+  created_at: string;
+  last_login_at: string | null;
+  banned_at: string | null;
+  banned_reason: string;
+};
+
+export type MemberPatch = { role?: MemberRole; banned_reason?: string; hide_comments?: boolean };
