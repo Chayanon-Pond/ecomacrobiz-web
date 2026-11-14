@@ -83,9 +83,15 @@ type Post struct {
 	ReadingMinutes int
 	SEOTitle       string
 	SEODescription string
-	CreatedBy      *UserRef // nil when unknown or the user was deleted
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// SEO (wave 2). OGImage is nil when unset; OGMediaID resolves it from media.
+	FocusKeyword string
+	CanonicalURL string
+	NoIndex      bool
+	OGMediaID    *string
+	OGImage      *Cover
+	CreatedBy    *UserRef // nil when unknown or the user was deleted
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // CategorySlugs returns the slugs of the post's categories.

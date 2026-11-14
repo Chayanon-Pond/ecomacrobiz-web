@@ -64,19 +64,27 @@ type Posts interface {
 	GetByID(ctx context.Context, id string) (domain.Post, error)
 	// Create/Update persist the post and replace its categories by slug.
 	// ErrConflict on a duplicate live slug.
-	Create(ctx context.Context, p *domain.Post, createdBy *string) error
-	Update(ctx context.Context, p *domain.Post) error
-	SoftDelete(ctx context.Context, id string) (domain.Post, error)
+	// plan (may be nil) is applied to the redirects table in the same
+	// transaction as the post change.
+	Create(ctx context.Context, p *domain.Post, createdBy *string, plan *RedirectPlan) error
+	Update(ctx context.Context, p *domain.Post, plan *RedirectPlan) error
+	SoftDelete(ctx context.Context, id string, plan *RedirectPlan) (domain.Post, error)
 	// UpsertBySlug is used by the seeder; it reports whether a row changed.
 	UpsertBySlug(ctx context.Context, p *domain.Post) (changed bool, err error)
 	// SlugsTaken returns the candidates already used as the slug or a legacy
 	// slug of a live post other than excludeID.
 	SlugsTaken(ctx context.Context, candidates []string, excludeID string) ([]string, error)
 	// SetStatus changes only status and published_at (bulk actions).
-	SetStatus(ctx context.Context, id string, status domain.PostStatus, publishedAt *time.Time) (domain.Post, error)
-	// PublishDue atomically flips due scheduled posts to published. Safe to run
-	// concurrently: each post is returned by exactly one caller.
+	SetStatus(ctx context.Context, id string, status domain.PostStatus, publishedAt *time.Time, plan *RedirectPlan) (domain.Post, error)
+	// PublishDue atomically flips due scheduled posts to published and, in the
+	// same transaction, deletes redirect rows for their URLs (slug + legacy
+	// slugs). Safe to run concurrently: each post is returned by exactly one caller.
 	PublishDue(ctx context.Context, now time.Time) ([]domain.PostRef, error)
+	// LiveSlugs returns slug + legacy slugs of every live published post.
+	LiveSlugs(ctx context.Context, now time.Time) ([]domain.PostRef, error)
+	// LinkSuggestions: up to limit live posts (excluding excludeID) sharing a
+	// category with excludeID or whose title/excerpt contains query.
+	LinkSuggestions(ctx context.Context, excludeID, query string, limit int, now time.Time) ([]domain.LinkSuggestion, error)
 	Stats(ctx context.Context) (domain.PostStats, error)
 }
 
@@ -193,4 +201,49 @@ type Media interface {
 	// SoftDeleteUnused deletes the row unless live posts use it
 	// (*domain.InUseError). Returns the deleted row.
 	SoftDeleteUnused(ctx context.Context, id string) (domain.Media, error)
+}
+
+// RedirectPlan is a set of redirect-table changes applied inside the
+// transaction of a post change. Order: Remove, Set, Repoint.
+type RedirectPlan struct {
+	// Remove deletes the rows with these from_paths.
+	Remove []string
+	// Set inserts or replaces rows by from_path (CreatedBy may be nil). A 301
+	// row also flattens: other 301s whose to_path == From are re-pointed to To.
+	Set []RedirectSet
+	// Repoint re-points 301 rows whose to_path == Old to New.
+	Repoint []PathMove
+}
+
+type RedirectSet struct {
+	Redirect  domain.Redirect
+	CreatedBy *string
+}
+
+type PathMove struct{ Old, New string }
+
+func (p *RedirectPlan) Empty() bool {
+	return p == nil || (len(p.Remove) == 0 && len(p.Set) == 0 && len(p.Repoint) == 0)
+}
+
+type RedirectFilter struct {
+	domain.Page
+	Query  string // from/to/note contains
+	Kind   string // "" | manual | auto
+	Status int    // 0 | 301 | 410
+}
+
+type Redirects interface {
+	// List: ordered by from_path, CreatedBy resolved.
+	List(ctx context.Context, f RedirectFilter) ([]domain.Redirect, int, error)
+	// All returns every row ordered by from_path (public map).
+	All(ctx context.Context) ([]domain.Redirect, error)
+	Get(ctx context.Context, id string) (domain.Redirect, error)
+	GetByFrom(ctx context.Context, from string) (domain.Redirect, error)
+	// Create/Update store r and, when r is a 301, re-point other 301s whose
+	// to_path == r.From to r.To in the same transaction (returns how many).
+	// ErrConflict on a duplicate from_path.
+	Create(ctx context.Context, r *domain.Redirect, createdBy *string) (flattened int, err error)
+	Update(ctx context.Context, r *domain.Redirect) (flattened int, err error)
+	Delete(ctx context.Context, id string) (domain.Redirect, error)
 }

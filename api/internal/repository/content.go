@@ -59,34 +59,49 @@ func (r *PGPosts) SlugsTaken(ctx context.Context, candidates []string, excludeID
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-func (r *PGPosts) SetStatus(ctx context.Context, id string, status domain.PostStatus, publishedAt *time.Time) (domain.Post, error) {
-	tag, err := r.db.Exec(ctx, `UPDATE posts SET status = $2, published_at = $3 WHERE id = $1 AND deleted_at IS NULL`,
-		id, string(status), publishedAt)
+func (r *PGPosts) SetStatus(ctx context.Context, id string, status domain.PostStatus, publishedAt *time.Time, plan *RedirectPlan) (domain.Post, error) {
+	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE posts SET status = $2, published_at = $3 WHERE id = $1 AND deleted_at IS NULL`,
+			id, string(status), publishedAt)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrNotFound
+		}
+		return applyRedirectPlan(ctx, tx, plan)
+	})
 	if err != nil {
 		return domain.Post{}, mapErr(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return domain.Post{}, domain.ErrNotFound
 	}
 	return r.GetByID(ctx, id)
 }
 
 // PublishDue relies on Postgres row locking: a concurrent UPDATE re-checks
 // status='scheduled' after the first commits, so each row is flipped (and
-// returned) exactly once across replicas.
+// returned) exactly once across replicas. Redirect rows for the published
+// URLs are deleted in the same transaction (a live post wins).
 func (r *PGPosts) PublishDue(ctx context.Context, now time.Time) ([]domain.PostRef, error) {
-	rows, err := r.db.Query(ctx, `
-		UPDATE posts SET status = 'published'
-		 WHERE status = 'scheduled' AND published_at <= $1 AND deleted_at IS NULL
-		RETURNING id, slug`, now)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.PostRef, error) {
-		var p domain.PostRef
-		err := row.Scan(&p.ID, &p.Slug)
-		return p, err
+	var out []domain.PostRef
+	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			UPDATE posts SET status = 'published'
+			 WHERE status = 'scheduled' AND published_at <= $1 AND deleted_at IS NULL
+			RETURNING id, slug, legacy_slugs`, now)
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectRows(rows, scanPostRef)
+		if err != nil {
+			return err
+		}
+		var paths []string
+		for _, p := range out {
+			paths = append(paths, p.Paths()...)
+		}
+		return applyRedirectPlan(ctx, tx, &RedirectPlan{Remove: paths})
 	})
+	return out, mapErr(err)
 }
 
 func (r *PGPosts) Stats(ctx context.Context) (domain.PostStats, error) {
@@ -364,7 +379,8 @@ func (r *PGLeads) Stats(ctx context.Context, now time.Time) (domain.LeadStats, e
 
 // mediaUsedBy matches live posts (alias p) that reference the row of table
 // "media" as cover or inside the markdown body.
-const mediaUsedBy = `p.deleted_at IS NULL AND (p.cover_media_id = media.id OR strpos(p.body_markdown, media.storage_key) > 0)`
+const mediaUsedBy = `p.deleted_at IS NULL AND (p.cover_media_id = media.id OR p.og_media_id = media.id
+	OR strpos(p.body_markdown, media.storage_key) > 0)`
 
 func (r *PGMedia) List(ctx context.Context, f MediaFilter) ([]domain.Media, int, error) {
 	conds := []string{"deleted_at IS NULL"}
@@ -404,7 +420,8 @@ func (r *PGMedia) List(ctx context.Context, f MediaFilter) ([]domain.Media, int,
 func (r *PGMedia) Usage(ctx context.Context, id string) ([]domain.MediaUsage, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT p.id, p.title, p.slug, p.status,
-		       CASE WHEN p.cover_media_id = media.id THEN 'cover' ELSE 'body' END
+		       CASE WHEN p.cover_media_id = media.id THEN 'cover'
+		            WHEN p.og_media_id = media.id THEN 'og' ELSE 'body' END
 		  FROM media JOIN posts p ON `+mediaUsedBy+`
 		 WHERE media.id = $1 AND media.deleted_at IS NULL
 		 ORDER BY p.updated_at DESC, p.id`, id)

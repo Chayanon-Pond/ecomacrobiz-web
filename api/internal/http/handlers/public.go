@@ -88,7 +88,7 @@ func (h *handler) serveMedia(c *gin.Context) {
 	}
 	hd := c.Writer.Header()
 	hd.Set("Content-Type", ct)
-	// Keys are random UUIDs and never rewritten, so the content is immutable.
+	// Keys carry a random part and are never rewritten, so the content is immutable.
 	hd.Set("Cache-Control", "public, max-age=31536000, immutable")
 	http.ServeContent(c.Writer, c.Request, "", st.ModTime(), f)
 }

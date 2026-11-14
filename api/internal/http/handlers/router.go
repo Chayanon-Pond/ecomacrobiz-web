@@ -32,6 +32,7 @@ type Deps struct {
 	Log        *slog.Logger
 	DB         Pinger
 	Posts      *service.PostService
+	Redirects  *service.RedirectService
 	Contact    *service.ContactService
 	Auth       *service.AuthService
 	Leads      *service.LeadService
@@ -90,6 +91,7 @@ func NewRouter(d Deps) (*gin.Engine, error) {
 	pub.GET("/categories", h.listCategories)
 	pub.GET("/posts", h.listPosts)
 	pub.GET("/posts/:slug", h.getPost)
+	pub.GET("/redirects", h.publicRedirects)
 	v1.POST("/contact", noStore, middleware.BodyLimit(contactBodyLimit),
 		middleware.RateLimit(d.ContactLimiter, middleware.ClientIPKey), h.contact)
 

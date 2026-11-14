@@ -61,7 +61,9 @@ const postColsTmpl = `p.id, p.slug, p.legacy_slugs, p.title, p.excerpt, %s, p.co
 	p.cover_url, p.cover_alt, p.cover_width, p.cover_height, p.author, p.status, p.published_at,
 	p.featured, p.reading_minutes, p.seo_title, p.seo_description, p.created_at, p.updated_at,
 	p.created_by, (SELECT u.name FROM admin_users u WHERE u.id = p.created_by),
-	(SELECT u.email FROM admin_users u WHERE u.id = p.created_by)`
+	(SELECT u.email FROM admin_users u WHERE u.id = p.created_by),
+	p.focus_keyword, p.canonical_url, p.noindex, p.og_media_id, p.og_image_url, p.og_image_alt,
+	p.og_image_width, p.og_image_height`
 
 var (
 	postSummaryCols = fmt.Sprintf(postColsTmpl, `'' AS body_markdown`)
@@ -77,11 +79,15 @@ func scanPost(row pgx.Row) (domain.Post, error) {
 		status                  string
 		legacy                  []string
 		byID, byName, byEmail   *string
+		ogURL                   *string
+		ogAlt                   string
+		ogWidth, ogHeight       *int32
 	)
 	err := row.Scan(&p.ID, &p.Slug, &legacy, &p.Title, &p.Excerpt, &p.BodyMarkdown, &p.CoverMediaID,
 		&coverURL, &coverAlt, &coverWidth, &coverHeight, &p.Author, &status, &p.PublishedAt,
 		&p.Featured, &p.ReadingMinutes, &p.SEOTitle, &p.SEODescription, &p.CreatedAt, &p.UpdatedAt,
-		&byID, &byName, &byEmail)
+		&byID, &byName, &byEmail,
+		&p.FocusKeyword, &p.CanonicalURL, &p.NoIndex, &p.OGMediaID, &ogURL, &ogAlt, &ogWidth, &ogHeight)
 	if err != nil {
 		return p, err
 	}
@@ -101,6 +107,7 @@ func scanPost(row pgx.Row) (domain.Post, error) {
 		}
 		p.Cover = c
 	}
+	p.OGImage = imageFrom(ogURL, ogAlt, ogWidth, ogHeight)
 	p.Categories = []domain.CategoryRef{}
 	return p, nil
 }
@@ -275,22 +282,27 @@ func (r *PGPosts) reload(ctx context.Context, p *domain.Post) error {
 	return nil
 }
 
-func (r *PGPosts) Create(ctx context.Context, p *domain.Post, createdBy *string) error {
+func (r *PGPosts) Create(ctx context.Context, p *domain.Post, createdBy *string, plan *RedirectPlan) error {
 	cu, ca, cw, ch := coverArgs(p)
+	ou, oa, ow, oh := imageArgs(p.OGImage)
 	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
 			INSERT INTO posts (slug, legacy_slugs, title, excerpt, body_markdown, cover_media_id, cover_url,
 			                   cover_alt, cover_width, cover_height, author, status, published_at, featured,
-			                   reading_minutes, seo_title, seo_description, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			                   reading_minutes, seo_title, seo_description, created_by, focus_keyword, canonical_url,
+			                   noindex, og_media_id, og_image_url, og_image_alt, og_image_width, og_image_height)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
 			RETURNING id`,
 			p.Slug, nonNil(p.LegacySlugs), p.Title, p.Excerpt, p.BodyMarkdown, p.CoverMediaID, cu, ca, cw, ch,
 			p.Author, string(p.Status), p.PublishedAt, p.Featured, p.ReadingMinutes, p.SEOTitle,
-			p.SEODescription, createdBy).Scan(&p.ID)
+			p.SEODescription, createdBy, p.FocusKeyword, p.CanonicalURL, p.NoIndex, p.OGMediaID, ou, oa, ow, oh).Scan(&p.ID)
 		if err != nil {
 			return err
 		}
-		return replaceCategories(ctx, tx, p.ID, p.CategorySlugs())
+		if err := replaceCategories(ctx, tx, p.ID, p.CategorySlugs()); err != nil {
+			return err
+		}
+		return applyRedirectPlan(ctx, tx, plan)
 	})
 	if err != nil {
 		return mapErr(err)
@@ -298,23 +310,30 @@ func (r *PGPosts) Create(ctx context.Context, p *domain.Post, createdBy *string)
 	return r.reload(ctx, p)
 }
 
-func (r *PGPosts) Update(ctx context.Context, p *domain.Post) error {
+func (r *PGPosts) Update(ctx context.Context, p *domain.Post, plan *RedirectPlan) error {
 	cu, ca, cw, ch := coverArgs(p)
+	ou, oa, ow, oh := imageArgs(p.OGImage)
 	err := withTx(ctx, r.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE posts SET slug=$2, legacy_slugs=$3, title=$4, excerpt=$5, body_markdown=$6, cover_media_id=$7,
 			       cover_url=$8, cover_alt=$9, cover_width=$10, cover_height=$11, author=$12, status=$13,
-			       published_at=$14, featured=$15, reading_minutes=$16, seo_title=$17, seo_description=$18
+			       published_at=$14, featured=$15, reading_minutes=$16, seo_title=$17, seo_description=$18,
+			       focus_keyword=$19, canonical_url=$20, noindex=$21, og_media_id=$22, og_image_url=$23,
+			       og_image_alt=$24, og_image_width=$25, og_image_height=$26
 			 WHERE id = $1 AND deleted_at IS NULL`,
 			p.ID, p.Slug, nonNil(p.LegacySlugs), p.Title, p.Excerpt, p.BodyMarkdown, p.CoverMediaID, cu, ca, cw, ch,
-			p.Author, string(p.Status), p.PublishedAt, p.Featured, p.ReadingMinutes, p.SEOTitle, p.SEODescription)
+			p.Author, string(p.Status), p.PublishedAt, p.Featured, p.ReadingMinutes, p.SEOTitle, p.SEODescription,
+			p.FocusKeyword, p.CanonicalURL, p.NoIndex, p.OGMediaID, ou, oa, ow, oh)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
 			return domain.ErrNotFound
 		}
-		return replaceCategories(ctx, tx, p.ID, p.CategorySlugs())
+		if err := replaceCategories(ctx, tx, p.ID, p.CategorySlugs()); err != nil {
+			return err
+		}
+		return applyRedirectPlan(ctx, tx, plan)
 	})
 	if err != nil {
 		return mapErr(err)
@@ -322,19 +341,22 @@ func (r *PGPosts) Update(ctx context.Context, p *domain.Post) error {
 	return r.reload(ctx, p)
 }
 
-func (r *PGPosts) SoftDelete(ctx context.Context, id string) (domain.Post, error) {
+func (r *PGPosts) SoftDelete(ctx context.Context, id string, plan *RedirectPlan) (domain.Post, error) {
 	p, err := r.GetByID(ctx, id)
 	if err != nil {
 		return p, err
 	}
-	tag, err := r.db.Exec(ctx, `UPDATE posts SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
-	if err != nil {
-		return p, mapErr(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return p, domain.ErrNotFound
-	}
-	return p, nil
+	err = withTx(ctx, r.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE posts SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrNotFound
+		}
+		return applyRedirectPlan(ctx, tx, plan)
+	})
+	return p, mapErr(err)
 }
 
 func (r *PGPosts) UpsertBySlug(ctx context.Context, p *domain.Post) (bool, error) {

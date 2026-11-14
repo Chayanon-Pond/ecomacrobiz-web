@@ -48,7 +48,7 @@ func TestPostsAdminV2(t *testing.T) {
 		for _, c := range cats {
 			p.Categories = append(p.Categories, domain.CategoryRef{Slug: c})
 		}
-		if err := store.Posts.Create(ctx, &p, &u.ID); err != nil {
+		if err := store.Posts.Create(ctx, &p, &u.ID, nil); err != nil {
 			t.Fatal(err)
 		}
 		return p
@@ -101,14 +101,14 @@ func TestPostsAdminV2(t *testing.T) {
 		!st.NextScheduledAt.Equal(soon) {
 		t.Fatalf("stats: %+v %v", st, err)
 	}
-	got, err := store.Posts.SetStatus(ctx, a.ID, domain.PostDraft, a.PublishedAt)
+	got, err := store.Posts.SetStatus(ctx, a.ID, domain.PostDraft, a.PublishedAt, nil)
 	if err != nil || got.Status != domain.PostDraft || !got.PublishedAt.Equal(past) {
 		t.Fatalf("set status: %+v %v", got, err)
 	}
-	if _, err := store.Posts.SetStatus(ctx, uuid.NewString(), domain.PostDraft, nil); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := store.Posts.SetStatus(ctx, uuid.NewString(), domain.PostDraft, nil, nil); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("set status missing: %v", err)
 	}
-	if _, err := store.Posts.SetStatus(ctx, a.ID, domain.PostScheduled, nil); err == nil {
+	if _, err := store.Posts.SetStatus(ctx, a.ID, domain.PostScheduled, nil, nil); err == nil {
 		t.Fatal("scheduled without published_at must violate the CHECK")
 	}
 }
@@ -150,13 +150,13 @@ func TestSchedulerIdempotentConcurrent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		p := domain.Post{Slug: fmt.Sprintf("due-%d", i), Title: "t", BodyMarkdown: "x", Status: domain.PostScheduled,
 			PublishedAt: &due}
-		if err := store.Posts.Create(ctx, &p, nil); err != nil {
+		if err := store.Posts.Create(ctx, &p, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		want[p.ID] = true
 	}
 	notDue := domain.Post{Slug: "not-due", Title: "t", BodyMarkdown: "x", Status: domain.PostScheduled, PublishedAt: &future}
-	_ = store.Posts.Create(ctx, &notDue, nil)
+	_ = store.Posts.Create(ctx, &notDue, nil, nil)
 
 	au := &countingAuditor{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -404,12 +404,12 @@ func TestMediaUsageIntegration(t *testing.T) {
 	p := domain.Post{Slug: "p", Title: "P", Status: domain.PostDraft, CoverMediaID: &cover.ID,
 		Cover:        &domain.Cover{URL: cover.URL},
 		BodyMarkdown: "![a](http://x/media/" + body.StorageKey + ")"}
-	if err := store.Posts.Create(ctx, &p, nil); err != nil {
+	if err := store.Posts.Create(ctx, &p, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	gone := domain.Post{Slug: "gone", Title: "G", Status: domain.PostDraft, BodyMarkdown: unused.StorageKey}
-	_ = store.Posts.Create(ctx, &gone, nil)
-	_, _ = store.Posts.SoftDelete(ctx, gone.ID)
+	_ = store.Posts.Create(ctx, &gone, nil, nil)
+	_, _ = store.Posts.SoftDelete(ctx, gone.ID, nil)
 
 	list, total, err := store.Media.List(ctx, repository.MediaFilter{Page: pg(10)})
 	if err != nil || total != 3 {
@@ -460,7 +460,7 @@ func TestMediaUsageIntegration(t *testing.T) {
 	if _, err := store.Media.SoftDeleteUnused(ctx, unused.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("double delete: %v", err)
 	}
-	_, _ = store.Posts.SoftDelete(ctx, p.ID)
+	_, _ = store.Posts.SoftDelete(ctx, p.ID, nil)
 	if _, err := store.Media.SoftDeleteUnused(ctx, cover.ID); err != nil {
 		t.Fatalf("delete after post removed: %v", err)
 	}

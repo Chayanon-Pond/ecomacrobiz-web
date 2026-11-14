@@ -433,12 +433,109 @@ is rejected. Images with a side over 20000 px are rejected.
 ### Media usage
 
 A media file is "in use" when a live (not soft-deleted) post of any status
-has it as `cover_media_id` **or** its `body_markdown` contains the file's
-storage key (e.g. `9f…c1.jpg`, which appears in its URL). `usage_count` and
-`usage[]` count posts (one entry per post; `kind` is `cover` when it is the
-cover, otherwise `body`). Deleting an unused file soft-deletes the row and
+has it as `cover_media_id` or `og_media_id` **or** its `body_markdown` contains
+the file's storage key (e.g. `9f…c1.jpg`, which appears in its URL).
+`usage_count` and `usage[]` count posts (one entry per post; `kind` is `cover`
+when it is the cover, `og` when it is the OG image, otherwise `body`). Deleting an unused file soft-deletes the row and
 removes the file from storage; the check and the delete are one statement.
 Absolute URLs pasted elsewhere (other sites, old revisions) are not tracked.
+
+## Admin API v2 — SEO & redirects
+
+Migration `00004_seo.sql` (additive): SEO columns on `posts` and a
+`redirects` table. Routes: `routes_content.go` (admin) and `router.go`
+(public); logic in `service/redirects.go` and `service/posts.go`.
+
+### Post SEO fields
+
+| field | DTO | input rules |
+| --- | --- | --- |
+| `focus_keyword` | admin only | ≤ 100 characters |
+| `canonical_url` | admin + public | `""` or an absolute `https://` URL (≤ 2000) |
+| `noindex` | admin + public | boolean; noindex posts stay in the public list (the web sitemap excludes them) |
+| `og_image` | admin + public, `{url, alt, width, height}` or `null` | from `og_media_id` (URL + size from the media row, `alt` from `og_image.alt` else the media alt) **or** `og_image.url` (`https://…` or `/…`) with `width` and `height` > 0; alt ≤ 300 |
+| `og_media_id` | admin only | media uuid (unknown → 422). An OG image counts as media usage (`kind: "og"`) |
+| `redirect_to` | input only | used only when the PUT unpublishes a published post (see below) |
+
+PUT replaces the post, so the editor must echo every SEO field back.
+`DELETE /posts/:id` accepts an optional JSON body `{"redirect_to": "…"}`.
+
+### Endpoints
+
+| method path | gate | notes |
+| --- | --- | --- |
+| `GET /api/v1/redirects` | public (`publicCache`) | `{data:[{from, to\|null, status}]}` sorted by `from`: every table row plus `/knowledge/<legacy> → /knowledge/<slug>` (301) for each legacy slug of a live published post. A live post URL always wins over a row. The web decides 301/410 from this map; `GET /api/v1/posts/:slug` is unchanged |
+| `GET /admin/redirects` | posts:read | `?q` (from/to/note contains) `&kind=manual\|auto` `&status=301\|410` `&page&per_page≤100` → `[{id, from, to, status, kind, note, created_by, created_at, updated_at}]` ordered by `from` |
+| `POST /admin/redirects` | posts:publish | `{from, to\|null, status: 301\|410, note}` → 201 row + `flattened` (rows re-pointed). Audit `redirect.create` |
+| `PUT /admin/redirects/:id` | posts:publish | same body → row + `flattened`; an edited `auto` row becomes `manual`. Audit `redirect.update` |
+| `DELETE /admin/redirects/:id` | posts:publish | 204. Audit `redirect.delete` |
+| `GET /admin/posts/link-suggestions?post_id=&q=` | posts:read | up to 8 live published posts (not `post_id`) that share a category with `post_id` or whose title/excerpt contains `q`; ranked by shared categories, keyword match, newest. `[{id, title, slug, url:"/knowledge/<slug>"}]`; `[]` when neither is given |
+
+Every redirect change (manual or automatic) revalidates the web tag
+`redirects` (the web `/api/revalidate` must allowlist it).
+
+### Path rules
+
+Stored paths start with `/`, are percent-**decoded** and NFC-normalized (Thai
+allowed: `/post/%E0%B8%AA…/` and `/post/ส…` are the same row), have repeated
+`/` collapsed and no trailing `/` (except `/`). Rejected (422): query `?` or
+fragment `#`, `.`/`..` segments, whitespace, control characters, `\`, bad
+percent-encoding, > 2000 bytes. `to` is a site path (same rules) or an
+absolute `https://` URL on any host; an `https://` URL on the `WEB_BASE_URL`
+host is stored as a path. `410` rows have `to = null` (a `to` sent with 410 is
+ignored); the DB enforces `(status = 301) = (to IS NOT NULL)`.
+
+Rules on every create/update (422 with a Thai field message):
+
+- `from != to`.
+- **No chains:** `to` must not be the `from` of another 301 ("ปลายทางเป็น URL
+  ที่ถูก redirect อยู่แล้ว (ห้ามทำ redirect ต่อกันเป็นทอด)"); this also rules out
+  loops. A `to` that is a live post's legacy URL is replaced by the post's
+  canonical URL.
+- **Flatten:** existing 301s whose `to` equals the new `from` are re-pointed to
+  the new `to` in the same transaction (count returned as `flattened`). A 410
+  does not flatten: a 301 into a now-gone URL stays (one extra hop, ends in 410).
+- **No shadowing:** `from` must not be a live published post URL
+  (`/knowledge/<slug or legacy slug>`), a core page (`/`, `/purpose`,
+  `/solutions`, `/gallery`, `/how-we-work`, `/contact`, `/privacy`,
+  `/knowledge`) or under `/admin`, `/api`, `/_next`.
+- Duplicate `from` → 422 on `from`.
+
+### Automatic redirects (same transaction as the post change)
+
+- **Slug change of a published post:** the old slug is appended to
+  `legacy_slugs` (deduped, newest last, the new slug removed, capped at 20 —
+  oldest dropped); rows for the post's live URLs are deleted; 301s that pointed
+  at the old URL are re-pointed to the new one.
+- **Publish** (create/PUT/bulk/scheduler): rows for `/knowledge/<slug>` and
+  every legacy slug are deleted (a live post wins).
+- **Unpublish** (published → draft by PUT) or **delete** of a published post:
+  `/knowledge/<slug>` and every legacy URL become `auto` rows — 301 to
+  `redirect_to` when given (validated as above, plus it must not be one of the
+  post's own URLs; error field `redirect_to`), else 410. Existing 301s to those
+  URLs are flattened to the target.
+- **Bulk** unpublish/delete → 410 (no per-item target).
+- Not handled: published → scheduled (URL 404s until the scheduler publishes
+  it); legacy slugs removed by hand from a live post (they 404).
+
+### IndexNow
+
+Optional. With `INDEXNOW_KEY` (8–128 of `a-zA-Z0-9-`) **and**
+`WEB_BASE_URL` set, the API POSTs
+`{host, key, keyLocation: <WEB_BASE_URL>/<key>.txt, urlList}` to
+`https://api.indexnow.org/indexnow` asynchronously (10 s timeout, logged only,
+never fails a request) after: publish, update of a published post (old and new
+URL on a slug change), unpublish and delete (old URL + the redirect target when
+it is on the site), bulk actions and scheduler publishes. `/knowledge` is
+always included. URLs on other hosts are dropped. The web serves
+`/<INDEXNOW_KEY>.txt` when its own `INDEXNOW_KEY` is set.
+
+### Media file names
+
+New uploads are stored as `<slug>-<8 hex>.<ext>`: an ASCII slug (≤ 60) of the
+alt text, else of the original file name without extension, else `image`
+(e.g. Thai-only text). Existing `<uuid>.<ext>` keys are untouched. Storage
+never overwrites a key (`ErrKeyExists` → a new random suffix is drawn).
 
 ## Notifications
 
@@ -493,6 +590,7 @@ See `.env.example` for the annotated file.
 | `SESSION_TTL` | `24h` | session lifetime |
 | `INVITE_TTL` | `72h` | invitation / password-reset link lifetime (10m-720h) |
 | `WEB_BASE_URL` | empty | public web origin (e.g. `https://www.ecomacrobiz.com`); with an e-mail transport configured, invite/reset links are also e-mailed |
+| `INDEXNOW_KEY` | empty | IndexNow key (8–128 `a-zA-Z0-9-`); with `WEB_BASE_URL`, changed post URLs are submitted to IndexNow |
 | `PUBLIC_BASE_URL` | `http://localhost:18080` | absolute base for media URLs |
 | `MEDIA_DIR` | `./data/media` | upload directory (`/data/media` in the image) |
 | `MAX_UPLOAD_MB` | `8` | per-file upload limit |
@@ -521,6 +619,11 @@ See `.env.example` for the annotated file.
   (required when published), featured, reading_minutes, seo_title,
   seo_description, created_by, timestamps, deleted_at; index
   `(status, published_at DESC) WHERE deleted_at IS NULL`)
+  + 00004: focus_keyword, canonical_url, noindex, og_media_id FK set null,
+  og_image_url/alt/width/height
+- `redirects` (00004: id, from_path **unique** (normalized), to_path NULL for 410,
+  status_code CHECK `301|410` with `(status_code = 301) = (to_path IS NOT NULL)`,
+  kind `manual|auto`, note, created_by FK set null, timestamps; index on to_path)
 - `post_categories` (PK `(post_id, category_id)`, both FK cascade; index on category_id)
 - `leads` (id, first_name, last_name, company, line_id, phone, email,
   preferred_channel CHECK, preferred_date date, preferred_time CHECK HH:MM,

@@ -3,7 +3,10 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"  // register decoder for DecodeConfig
@@ -160,9 +163,17 @@ func (s *MediaService) Upload(ctx context.Context, r io.Reader, originalName, al
 		return domain.Media{}, err
 	}
 	data, w, h = out.Data, out.Width, out.Height
-	key := uuid.NewString() + "." + mimeExt[mt]
-	if err := s.store.Put(ctx, key, bytes.NewReader(data), mt); err != nil {
-		return domain.Media{}, fmt.Errorf("store media: %w", err)
+	var key string
+	for attempt := 0; ; attempt++ {
+		key = MediaKey(alt, originalName, mimeExt[mt])
+		err := s.store.Put(ctx, key, bytes.NewReader(data), mt)
+		if errors.Is(err, storage.ErrKeyExists) && attempt < 4 {
+			continue
+		}
+		if err != nil {
+			return domain.Media{}, fmt.Errorf("store media: %w", err)
+		}
+		break
 	}
 	name := truncateRunes(cleanLine(filepath.Base(strings.ReplaceAll(originalName, `\`, "/"))), 255)
 	if name == "." || name == "/" {
@@ -184,6 +195,29 @@ func (s *MediaService) Upload(ctx context.Context, r io.Reader, originalName, al
 	s.audit.Record(ctx, domain.AuditEvent{Actor: actor, Action: domain.AuditMediaUpload, TargetType: domain.TargetMedia,
 		TargetID: m.ID, Metadata: map[string]any{"name": m.OriginalName, "mime": mt, "size": m.SizeBytes}})
 	return m, nil
+}
+
+const maxKeySlug = 60
+
+// MediaKey builds a descriptive storage key: an ASCII slug of the alt text
+// (else the original file name without extension), at most 60 characters,
+// plus 8 random hex digits: "<slug>-<8hex>.<ext>" ("image-<8hex>.<ext>"
+// when nothing ASCII is usable, e.g. Thai-only text).
+func MediaKey(alt, originalName, ext string) string {
+	slug := Slugify(alt)
+	if slug == "" {
+		base := filepath.Base(strings.ReplaceAll(originalName, `\`, "/"))
+		slug = Slugify(strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+	if len(slug) > maxKeySlug {
+		slug = strings.TrimRight(slug[:maxKeySlug], "-")
+	}
+	if slug == "" {
+		slug = "image"
+	}
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return slug + "-" + hex.EncodeToString(b[:]) + "." + ext
 }
 
 func (s *MediaService) List(ctx context.Context, f repository.MediaFilter) ([]domain.Media, int, error) {

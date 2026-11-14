@@ -16,7 +16,8 @@ import (
 )
 
 type MediaStore interface {
-	// Put stores r under key. Keys are flat names like "<uuid>.webp".
+	// Put stores r under key (ErrKeyExists if taken). Keys are flat names
+	// like "<descriptive-slug>-<8 hex>.webp" (older uploads: "<uuid>.webp").
 	Put(ctx context.Context, key string, r io.Reader, contentType string) error
 	Delete(ctx context.Context, key string) error
 	// URL returns the absolute public URL for key.
@@ -31,6 +32,9 @@ type Opener interface {
 var keyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.[a-z0-9]{1,8}$`)
 
 var ErrInvalidKey = errors.New("invalid media key")
+
+// ErrKeyExists: Put never overwrites a stored file (keys are immutable).
+var ErrKeyExists = errors.New("media key exists")
 
 func ValidKey(key string) bool { return keyRe.MatchString(key) }
 
@@ -81,6 +85,10 @@ func (l *LocalDisk) Put(_ context.Context, key string, r io.Reader, _ string) er
 	if err := f.Close(); err != nil {
 		_ = l.root.Remove(tmp)
 		return err
+	}
+	if _, err := l.root.Stat(key); err == nil {
+		_ = l.root.Remove(tmp)
+		return ErrKeyExists
 	}
 	if err := l.root.Rename(tmp, key); err != nil {
 		_ = l.root.Remove(tmp)

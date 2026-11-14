@@ -103,11 +103,14 @@ func newEnv(t *testing.T) *env {
 	}
 	mail := &recMail{}
 	db := &pinger{}
+	redirects := service.NewRedirectService(store.RedirectsRepo(), store.PostsRepo(), rv, audit, discard)
+	redirects.SetSiteBaseURL(cfg.WebBaseURL)
 	r, err := NewRouter(Deps{
 		Config: cfg, Log: discard, DB: db,
-		Posts:   service.NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, audit, discard),
-		Contact: service.NewContactService(store.LeadsRepo(), nil, discard),
-		Auth:    auth, Leads: service.NewLeadService(store.LeadsRepo(), audit, discard),
+		Posts:     service.NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), redirects, rv, audit, discard),
+		Redirects: redirects,
+		Contact:   service.NewContactService(store.LeadsRepo(), nil, discard),
+		Auth:      auth, Leads: service.NewLeadService(store.LeadsRepo(), audit, discard),
 		Media:             service.NewMediaService(store.MediaRepo(), disk, 1<<20, 0, audit, discard),
 		MediaFiles:        disk,
 		ContactLimiter:    ratelimit.New(cfg.ContactRateLimit.Events, cfg.ContactRateLimit.Per),
@@ -258,7 +261,8 @@ func TestCORS(t *testing.T) {
 
 func seedPosts(t *testing.T, e *env) {
 	t.Helper()
-	svc := service.NewPostService(e.store.PostsRepo(), e.store.CategoriesRepo(), e.store.MediaRepo(), e.rv,
+	svc := service.NewPostService(e.store.PostsRepo(), e.store.CategoriesRepo(), e.store.MediaRepo(),
+		service.NewRedirectService(e.store.RedirectsRepo(), e.store.PostsRepo(), e.rv, service.NopAuditor{}, discard), e.rv,
 		service.NopAuditor{}, discard)
 	legacy := []string{"แบรนด์ดิ้ง-กับ-การตลาด"}
 	for i, slug := range []string{"one", "two", "three"} {

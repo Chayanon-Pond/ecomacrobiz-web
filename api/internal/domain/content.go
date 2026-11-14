@@ -22,8 +22,9 @@ func (e *InUseError) Message() string {
 
 // PostRef is the minimal post identity returned by bulk/scheduler updates.
 type PostRef struct {
-	ID   string
-	Slug string
+	ID          string
+	Slug        string
+	LegacySlugs []string
 }
 
 // MediaUsage is one live post that references a media file.

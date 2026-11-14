@@ -11,24 +11,29 @@ import (
 
 type adminPostSummaryDTO struct {
 	postSummaryDTO
-	CreatedBy *userRefDTO `json:"created_by"`
+	CreatedBy    *userRefDTO `json:"created_by"`
+	FocusKeyword string      `json:"focus_keyword"`
 }
 
 type adminPostDTO struct {
 	postDTO
-	CreatedBy *userRefDTO `json:"created_by"`
+	CreatedBy    *userRefDTO `json:"created_by"`
+	FocusKeyword string      `json:"focus_keyword"`
+	OGMediaID    *string     `json:"og_media_id"`
 }
 
 func toAdminSummaries(ps []domain.Post) []adminPostSummaryDTO {
 	out := make([]adminPostSummaryDTO, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, adminPostSummaryDTO{postSummaryDTO: toSummary(p, true), CreatedBy: toUserRef(p.CreatedBy)})
+		out = append(out, adminPostSummaryDTO{postSummaryDTO: toSummary(p, true), CreatedBy: toUserRef(p.CreatedBy),
+			FocusKeyword: p.FocusKeyword})
 	}
 	return out
 }
 
 func toAdminPost(p domain.Post) adminPostDTO {
-	return adminPostDTO{postDTO: toPost(p, true), CreatedBy: toUserRef(p.CreatedBy)}
+	return adminPostDTO{postDTO: toPost(p, true), CreatedBy: toUserRef(p.CreatedBy), FocusKeyword: p.FocusKeyword,
+		OGMediaID: p.OGMediaID}
 }
 
 // ---- media ----

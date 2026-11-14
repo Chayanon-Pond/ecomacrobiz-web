@@ -41,6 +41,9 @@ type postSummaryDTO struct {
 	Featured       bool             `json:"featured"`
 	SEOTitle       string           `json:"seo_title"`
 	SEODescription string           `json:"seo_description"`
+	CanonicalURL   string           `json:"canonical_url"`
+	NoIndex        bool             `json:"noindex"`
+	OGImage        *coverDTO        `json:"og_image"`
 	Status         string           `json:"status,omitempty"` // admin only
 }
 
@@ -65,6 +68,7 @@ func toSummary(p domain.Post, admin bool) postSummaryDTO {
 		ID: p.ID, Slug: p.Slug, Title: p.Title, Excerpt: p.Excerpt, Author: p.Author,
 		Categories: make([]categoryRefDTO, 0, len(p.Categories)), UpdatedAt: p.UpdatedAt.UTC(),
 		ReadingMinutes: p.ReadingMinutes, Featured: p.Featured, SEOTitle: p.SEOTitle, SEODescription: p.SEODescription,
+		CanonicalURL: p.CanonicalURL, NoIndex: p.NoIndex,
 	}
 	if p.PublishedAt != nil {
 		t := p.PublishedAt.UTC()
@@ -72,6 +76,9 @@ func toSummary(p domain.Post, admin bool) postSummaryDTO {
 	}
 	if p.Cover != nil {
 		d.Cover = &coverDTO{URL: p.Cover.URL, Alt: p.Cover.Alt, Width: p.Cover.Width, Height: p.Cover.Height}
+	}
+	if p.OGImage != nil {
+		d.OGImage = &coverDTO{URL: p.OGImage.URL, Alt: p.OGImage.Alt, Width: p.OGImage.Width, Height: p.OGImage.Height}
 	}
 	for _, c := range p.Categories {
 		d.Categories = append(d.Categories, categoryRefDTO{Slug: c.Slug, Name: c.Name, NameTH: c.NameTH})

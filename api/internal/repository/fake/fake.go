@@ -33,6 +33,7 @@ type Store struct {
 	activities []domain.LeadActivity
 	tokens     []domain.UserToken
 	audit      []domain.AuditEntry
+	redirects  []domain.Redirect
 	touches    int
 	Now        func() time.Time
 }
@@ -140,6 +141,10 @@ func clonePost(p domain.Post) domain.Post {
 		c := *p.Cover
 		p.Cover = &c
 	}
+	if p.OGImage != nil {
+		c := *p.OGImage
+		p.OGImage = &c
+	}
 	return p
 }
 
@@ -239,7 +244,7 @@ func (r posts) resolve(p *domain.Post) {
 	p.Categories = refs
 }
 
-func (r posts) Create(_ context.Context, p *domain.Post, createdBy *string) error {
+func (r posts) Create(_ context.Context, p *domain.Post, createdBy *string, plan *repository.RedirectPlan) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.slugTaken(p.Slug, "") {
@@ -251,10 +256,11 @@ func (r posts) Create(_ context.Context, p *domain.Post, createdBy *string) erro
 	p.CreatedAt, p.UpdatedAt = now, now
 	r.resolve(p)
 	r.posts = append(r.posts, &postRow{Post: clonePost(*p)})
+	r.applyPlan(plan)
 	return nil
 }
 
-func (r posts) Update(_ context.Context, p *domain.Post) error {
+func (r posts) Update(_ context.Context, p *domain.Post, plan *repository.RedirectPlan) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.find(p.ID)
@@ -269,10 +275,11 @@ func (r posts) Update(_ context.Context, p *domain.Post) error {
 	p.UpdatedAt = r.Now().UTC()
 	r.resolve(p)
 	row.Post = clonePost(*p)
+	r.applyPlan(plan)
 	return nil
 }
 
-func (r posts) SoftDelete(_ context.Context, id string) (domain.Post, error) {
+func (r posts) SoftDelete(_ context.Context, id string, plan *repository.RedirectPlan) (domain.Post, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.find(id)
@@ -280,6 +287,7 @@ func (r posts) SoftDelete(_ context.Context, id string) (domain.Post, error) {
 		return domain.Post{}, domain.ErrNotFound
 	}
 	row.deleted = true
+	r.applyPlan(plan)
 	return clonePost(row.Post), nil
 }
 

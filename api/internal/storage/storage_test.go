@@ -52,3 +52,28 @@ func TestLocalDisk(t *testing.T) {
 		t.Fatal("delete of a missing key should be a no-op")
 	}
 }
+
+func TestLocalDiskNeverOverwrites(t *testing.T) {
+	d, err := NewLocalDisk(t.TempDir(), "https://api.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx := context.Background()
+	key := "brand-photo-0a1b2c3d.webp"
+	if err := d.Put(ctx, key, strings.NewReader("first"), "image/webp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Put(ctx, key, strings.NewReader("second"), "image/webp"); !errors.Is(err, ErrKeyExists) {
+		t.Fatalf("overwrite: %v", err)
+	}
+	f, err := d.Open(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(f)
+	if string(b) != "first" {
+		t.Fatalf("content replaced: %q", b)
+	}
+}

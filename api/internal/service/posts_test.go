@@ -90,7 +90,7 @@ func TestCoverURL(t *testing.T) {
 func newPostSvc() (*PostService, *fake.Store, *recRevalidator) {
 	store := fake.New()
 	rv := &recRevalidator{}
-	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, NopAuditor{}, discard), store, rv
+	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), testRedirects(store), rv, NopAuditor{}, discard), store, rv
 }
 
 func TestPostCreateUpdateDelete(t *testing.T) {
@@ -109,7 +109,7 @@ func TestPostCreateUpdateDelete(t *testing.T) {
 	if len(p.Categories) != 1 || p.Categories[0].Name != "Brand Insight" {
 		t.Fatalf("categories: %+v", p.Categories)
 	}
-	if got := rv.tags[0]; len(got) != 2 || got[0] != "posts" || got[1] != "post:branding-vs-marketing" {
+	if got := rv.tags[0]; strings.Join(got, ",") != "posts,post:branding-vs-marketing,redirects" {
 		t.Fatalf("revalidate tags: %v", got)
 	}
 
@@ -137,21 +137,23 @@ func TestPostCreateUpdateDelete(t *testing.T) {
 	in.Slug = "branding-and-marketing"
 	in.Title = "ใหม่"
 	p, err = svc.Update(ctx, p.ID, in, testOwner)
-	if err != nil || p.Slug != "branding-and-marketing" || len(p.LegacySlugs) != 1 || !p.PublishedAt.Equal(fixed) {
+	// the old slug of a published post becomes a legacy slug
+	if err != nil || p.Slug != "branding-and-marketing" || strings.Join(p.LegacySlugs, ",") != "แบรนด์ดิ้ง,branding-vs-marketing" ||
+		!p.PublishedAt.Equal(fixed) {
 		t.Fatalf("update 2: %+v %v", p, err)
 	}
 	last := rv.tags[len(rv.tags)-1]
-	if len(last) != 3 || last[2] != "post:branding-vs-marketing" {
+	if strings.Join(last, ",") != "posts,post:branding-and-marketing,post:branding-vs-marketing,redirects" {
 		t.Fatalf("old slug not revalidated: %v", last)
 	}
 
-	if err := svc.Delete(ctx, p.ID, testOwner); err != nil {
+	if err := svc.Delete(ctx, p.ID, nil, testOwner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Get(ctx, p.ID); err != domain.ErrNotFound {
 		t.Fatalf("after delete: %v", err)
 	}
-	if err := svc.Delete(ctx, "not-a-uuid", testOwner); err != domain.ErrNotFound {
+	if err := svc.Delete(ctx, "not-a-uuid", nil, testOwner); err != domain.ErrNotFound {
 		t.Fatalf("bad id: %v", err)
 	}
 }

@@ -7,8 +7,8 @@ import (
 	"github.com/ecomacrobiz/escoma/api/internal/http/middleware"
 )
 
-// registerContentRoutes: dashboard, posts, media and leads. Static segments
-// (/posts/slug-check, /posts/bulk, /leads/board, ...) coexist with the :id
+// registerContentRoutes: dashboard, posts, redirects, media and leads. Static
+// segments (/posts/slug-check, /posts/link-suggestions, /posts/bulk, /leads/board, ...) coexist with the :id
 // siblings (Gin prefers the static match; covered by TestContentRouting).
 func (h *handler) registerContentRoutes(authed *gin.RouterGroup) {
 	perm := middleware.RequirePerm
@@ -19,11 +19,17 @@ func (h *handler) registerContentRoutes(authed *gin.RouterGroup) {
 	authed.GET("/categories", perm(domain.PermPostsRead), h.listCategories)
 	authed.GET("/posts", perm(domain.PermPostsRead), h.adminListPosts)
 	authed.GET("/posts/slug-check", perm(domain.PermPostsRead), h.adminSlugCheck)
+	authed.GET("/posts/link-suggestions", perm(domain.PermPostsRead), h.linkSuggestions)
 	authed.GET("/posts/:id", perm(domain.PermPostsRead), h.adminGetPost)
 	authed.POST("/posts", perm(domain.PermPostsWrite), middleware.BodyLimit(postBodyLimit), h.adminCreatePost)
 	authed.POST("/posts/bulk", perm(domain.PermPostsPublish), small, h.adminBulkPosts)
 	authed.PUT("/posts/:id", perm(domain.PermPostsWrite), middleware.BodyLimit(postBodyLimit), h.adminUpdatePost)
-	authed.DELETE("/posts/:id", perm(domain.PermPostsWrite), h.adminDeletePost)
+	authed.DELETE("/posts/:id", perm(domain.PermPostsWrite), small, h.adminDeletePost)
+
+	authed.GET("/redirects", perm(domain.PermPostsRead), h.listRedirects)
+	authed.POST("/redirects", perm(domain.PermPostsPublish), small, h.createRedirect)
+	authed.PUT("/redirects/:id", perm(domain.PermPostsPublish), small, h.updateRedirect)
+	authed.DELETE("/redirects/:id", perm(domain.PermPostsPublish), h.deleteRedirect)
 
 	authed.GET("/media", perm(domain.PermMediaRead), h.listMedia)
 	authed.GET("/media/:id", perm(domain.PermMediaRead), h.getMedia)

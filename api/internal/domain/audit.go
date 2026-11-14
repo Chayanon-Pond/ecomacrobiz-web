@@ -38,15 +38,20 @@ const (
 	AuditLeadNote   = "lead.note"
 	AuditLeadAssign = "lead.assign"
 	AuditLeadExport = "lead.export"
+
+	AuditRedirectCreate = "redirect.create"
+	AuditRedirectUpdate = "redirect.update"
+	AuditRedirectDelete = "redirect.delete"
 )
 
 // Audit target types.
 const (
-	TargetUser   = "user"
-	TargetInvite = "invite"
-	TargetPost   = "post"
-	TargetMedia  = "media"
-	TargetLead   = "lead"
+	TargetUser     = "user"
+	TargetInvite   = "invite"
+	TargetPost     = "post"
+	TargetMedia    = "media"
+	TargetLead     = "lead"
+	TargetRedirect = "redirect"
 )
 
 // Actor identifies who performed an action plus request context. A zero

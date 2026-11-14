@@ -219,6 +219,16 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if cfg.WebRevalidateURL == "" {
 		log.Info("revalidate webhook disabled (WEB_REVALIDATE_URL unset)")
 	}
+	indexNow := notify.NewIndexNow(cfg.IndexNowKey, cfg.WebBaseURL, log)
+	if indexNow.Enabled() {
+		log.Info("indexnow enabled", "host", cfg.WebBaseURL)
+	} else {
+		log.Info("indexnow disabled (needs INDEXNOW_KEY and WEB_BASE_URL)")
+	}
+	redirects := service.NewRedirectService(store.Redirects, store.Posts, revalidator, audit, log)
+	redirects.SetSiteBaseURL(cfg.WebBaseURL)
+	posts := service.NewPostService(store.Posts, store.Categories, store.Media, redirects, revalidator, audit, log)
+	posts.SetIndexer(indexNow)
 
 	auth := service.NewAuthService(store.AdminUsers, store.Sessions, cfg.SessionTTL, 0, log)
 	auth.SetAuditor(audit)
@@ -245,7 +255,8 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Config:            cfg,
 		Log:               log,
 		DB:                pool,
-		Posts:             service.NewPostService(store.Posts, store.Categories, store.Media, revalidator, audit, log),
+		Posts:             posts,
+		Redirects:         redirects,
 		Contact:           service.NewContactService(store.Leads, dispatcher, log),
 		Auth:              auth,
 		Leads:             service.NewLeadService(store.Leads, audit, log),
@@ -267,6 +278,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 	// Scheduled posts: runs once now, then every SCHEDULER_INTERVAL.
 	scheduler := service.NewPostScheduler(store.Posts, audit, revalidator, log)
+	scheduler.SetIndexer(indexNow)
 	schedCtx, stopScheduler := context.WithCancel(ctx)
 	schedDone := make(chan struct{})
 	go func() {
@@ -311,6 +323,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	dispatcher.Wait(shutdownCtx)
 	mailer.Wait(shutdownCtx)
 	revalidator.Wait(shutdownCtx)
+	indexNow.Wait(shutdownCtx)
 	log.Info("shutdown complete")
 	return nil
 }

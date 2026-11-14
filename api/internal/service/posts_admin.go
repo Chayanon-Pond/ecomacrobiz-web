@@ -140,9 +140,13 @@ func (s *PostService) Bulk(ctx context.Context, in BulkInput, actor domain.Actor
 		return BulkResult{}, err
 	}
 	res := BulkResult{Succeeded: []string{}, Failed: []BulkFailure{}}
-	tags := []string{"posts"}
+	var (
+		slugs     []string
+		urls      []string
+		redirects bool
+	)
 	for _, id := range ids {
-		slug, err := s.bulkOne(ctx, in.Action, id, actor)
+		out, err := s.bulkOne(ctx, in.Action, id, actor)
 		if err != nil {
 			res.Failed = append(res.Failed, BulkFailure{ID: id, Message: bulkErrMessage(err)})
 			if !isExpected(err) {
@@ -151,12 +155,17 @@ func (s *PostService) Bulk(ctx context.Context, in BulkInput, actor domain.Actor
 			continue
 		}
 		res.Succeeded = append(res.Succeeded, id)
-		if slug != "" {
-			tags = append(tags, "post:"+slug)
+		if out.slug != "" {
+			slugs = append(slugs, out.slug)
 		}
+		urls = append(urls, out.urls...)
+		redirects = redirects || out.redirects
 	}
-	if len(tags) > 1 {
-		s.revalidate.Revalidate(tags...)
+	if len(slugs) > 0 {
+		s.revalidate.Revalidate(postTags(redirects, slugs...)...)
+	}
+	if len(urls) > 0 {
+		s.submit(urls...)
 	}
 	s.log.Info("bulk post action", "action", in.Action, "succeeded", len(res.Succeeded), "failed", len(res.Failed),
 		"actor", actor.ID)
@@ -180,47 +189,67 @@ func bulkErrMessage(err error) string {
 	}
 }
 
-// bulkOne returns the slug to revalidate ("" when nothing changed).
-func (s *PostService) bulkOne(ctx context.Context, action, id string, actor domain.Actor) (string, error) {
+type bulkOutcome struct {
+	slug      string   // to revalidate ("" when nothing changed)
+	urls      []string // IndexNow
+	redirects bool     // redirect rows changed
+}
+
+// bulkOne applies one bulk action. Publishing removes redirect rows for the
+// post's URLs; unpublishing or deleting a published post makes them 410
+// (no per-item target in bulk), in the same transaction.
+func (s *PostService) bulkOne(ctx context.Context, action, id string, actor domain.Actor) (bulkOutcome, error) {
 	p, err := s.Get(ctx, id)
 	if err != nil {
-		return "", err
+		return bulkOutcome{}, err
 	}
 	meta := map[string]any{"from": string(p.Status), "bulk": true}
+	wasLive := p.Status == domain.PostPublished
+	var plan *repository.RedirectPlan
+	out := bulkOutcome{slug: p.Slug}
+	if wasLive && action != "publish" {
+		if plan, _, err = s.redirects.gonePlan(ctx, refOf(p), nil, actor); err != nil {
+			return bulkOutcome{}, err
+		}
+		out.urls = []string{domain.KnowledgePath(p.Slug)}
+	}
 	switch action {
 	case "publish":
-		if p.Status == domain.PostPublished {
-			return "", nil
+		if wasLive {
+			return bulkOutcome{}, nil
 		}
 		if strings.TrimSpace(p.BodyMarkdown) == "" {
-			return "", errEmptyBody
+			return bulkOutcome{}, errEmptyBody
 		}
 		now := s.Now().UTC().Truncate(time.Second)
 		at := p.PublishedAt
 		if at == nil || at.After(now) {
 			at = &now
 		}
-		if _, err := s.posts.SetStatus(ctx, id, domain.PostPublished, at); err != nil {
-			return "", err
+		plan = livePlan(refOf(p))
+		out.urls = []string{domain.KnowledgePath(p.Slug)}
+		if _, err := s.posts.SetStatus(ctx, id, domain.PostPublished, at, plan); err != nil {
+			return bulkOutcome{}, err
 		}
 		s.record(ctx, actor, domain.AuditPostPublish, p, meta)
 	case "unpublish":
 		if p.Status == domain.PostDraft {
-			return "", nil
+			return bulkOutcome{}, nil
 		}
-		if _, err := s.posts.SetStatus(ctx, id, domain.PostDraft, p.PublishedAt); err != nil {
-			return "", err
+		if _, err := s.posts.SetStatus(ctx, id, domain.PostDraft, p.PublishedAt, plan); err != nil {
+			return bulkOutcome{}, err
 		}
 		s.record(ctx, actor, domain.AuditPostUnpublish, p, meta)
 	case "delete":
-		if _, err := s.posts.SoftDelete(ctx, id); err != nil {
-			return "", err
+		if _, err := s.posts.SoftDelete(ctx, id, plan); err != nil {
+			return bulkOutcome{}, err
 		}
 		meta["status"] = meta["from"]
 		delete(meta, "from")
 		s.record(ctx, actor, domain.AuditPostDelete, p, meta)
 	}
-	return p.Slug, nil
+	out.redirects = !plan.Empty()
+	return out, nil
 }
 
 // ---- dashboard ----
@@ -242,4 +271,26 @@ func (s *PostService) Dashboard(ctx context.Context) (DashboardPosts, error) {
 		return DashboardPosts{}, err
 	}
 	return DashboardPosts{PostStats: st, Recent: recent}, nil
+}
+
+// ---- internal link suggestions ----
+
+const maxLinkSuggestions = 8
+
+// LinkSuggestions returns up to 8 live posts that share a category with
+// postID or whose title/excerpt contains q (both optional; neither => none).
+func (s *PostService) LinkSuggestions(ctx context.Context, postID, q string) ([]domain.LinkSuggestion, error) {
+	postID = strings.TrimSpace(postID)
+	if _, err := uuid.Parse(postID); err != nil {
+		postID = ""
+	}
+	q = truncateRunes(cleanLine(q), 100)
+	if postID == "" && q == "" {
+		return []domain.LinkSuggestion{}, nil
+	}
+	out, err := s.posts.LinkSuggestions(ctx, postID, q, maxLinkSuggestions, s.Now())
+	if out == nil {
+		out = []domain.LinkSuggestion{}
+	}
+	return out, err
 }

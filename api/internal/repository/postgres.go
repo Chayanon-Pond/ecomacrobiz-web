@@ -30,6 +30,7 @@ type Store struct {
 	Media      *PGMedia
 	Tokens     *PGUserTokens
 	Audit      *PGAuditLogs
+	Redirects  *PGRedirects
 }
 
 func NewStore(db DB) *Store {
@@ -42,6 +43,7 @@ func NewStore(db DB) *Store {
 		Media:      &PGMedia{db: db},
 		Tokens:     &PGUserTokens{db: db},
 		Audit:      &PGAuditLogs{db: db},
+		Redirects:  &PGRedirects{db: db},
 	}
 }
 

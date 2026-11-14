@@ -104,14 +104,6 @@ func (h *handler) adminUpdatePost(c *gin.Context) {
 	respond.Data(c, http.StatusOK, toAdminPost(p))
 }
 
-func (h *handler) adminDeletePost(c *gin.Context) {
-	if err := h.Posts.Delete(c.Request.Context(), c.Param("id"), middleware.ActorFrom(c)); err != nil {
-		h.fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 func (h *handler) adminBulkPosts(c *gin.Context) {
 	var in service.BulkInput
 	if err := decodeJSON(c, &in); err != nil {

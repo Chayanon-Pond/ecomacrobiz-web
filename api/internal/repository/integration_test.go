@@ -108,14 +108,14 @@ func TestCategoriesAndPosts(t *testing.T) {
 		Excerpt: "สั้น", BodyMarkdown: "## หัวข้อ", Status: domain.PostPublished, PublishedAt: &pub,
 		Cover:      &domain.Cover{URL: "/images/x.webp", Alt: "ปก", Width: 1600, Height: 900},
 		Categories: []domain.CategoryRef{{Slug: "brand-insight"}, {Slug: "learning-hub"}}, ReadingMinutes: 3}
-	if err := store.Posts.Create(ctx, &p, &u.ID); err != nil {
+	if err := store.Posts.Create(ctx, &p, &u.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if p.ID == "" || len(p.Categories) != 2 || p.Categories[0].NameTH != "อินไซต์แบรนด์ (ใหม่)" || p.Cover.Width != 1600 {
 		t.Fatalf("created: %+v", p)
 	}
 	dup := p
-	if err := store.Posts.Create(ctx, &dup, nil); !errors.Is(err, domain.ErrConflict) {
+	if err := store.Posts.Create(ctx, &dup, nil, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("duplicate slug: %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestCategoriesAndPosts(t *testing.T) {
 	future := time.Now().Add(24 * time.Hour)
 	sched := domain.Post{Slug: "scheduled", Title: "ตั้งเวลา", Status: domain.PostPublished, PublishedAt: &future}
 	for _, x := range []*domain.Post{&draft, &sched} {
-		if err := store.Posts.Create(ctx, x, nil); err != nil {
+		if err := store.Posts.Create(ctx, x, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -171,14 +171,14 @@ func TestCategoriesAndPosts(t *testing.T) {
 	p.Title = "แก้ไขแล้ว"
 	p.Categories = []domain.CategoryRef{{Slug: "business-growth"}}
 	p.Cover = nil
-	if err := store.Posts.Update(ctx, &p); err != nil {
+	if err := store.Posts.Update(ctx, &p, nil); err != nil {
 		t.Fatal(err)
 	}
 	if p.Title != "แก้ไขแล้ว" || len(p.Categories) != 1 || p.Cover != nil || !p.UpdatedAt.After(before) {
 		t.Fatalf("updated: %+v", p)
 	}
 
-	deleted, err := store.Posts.SoftDelete(ctx, p.ID)
+	deleted, err := store.Posts.SoftDelete(ctx, p.ID, nil)
 	if err != nil || deleted.Slug != p.Slug {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestCategoriesAndPosts(t *testing.T) {
 	}
 	// slug is reusable after soft delete (partial unique index)
 	again := domain.Post{Slug: p.Slug, Title: "ใหม่", Status: domain.PostDraft}
-	if err := store.Posts.Create(ctx, &again, nil); err != nil {
+	if err := store.Posts.Create(ctx, &again, nil, nil); err != nil {
 		t.Fatalf("reuse slug: %v", err)
 	}
 	if _, err := store.Posts.GetByID(ctx, "not-a-uuid"); !errors.Is(err, domain.ErrNotFound) {

@@ -55,7 +55,7 @@ func newAuditedPostSvc(t *testing.T) (*PostService, *fake.Store, *recRevalidator
 	store := fake.New()
 	rv := &recRevalidator{}
 	au := &recAuditor{}
-	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, au, discard), store, rv, au
+	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), testRedirects(store), rv, au, discard), store, rv, au
 }
 
 func TestPostPublishPermission(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPostPublishPermission(t *testing.T) {
 	if _, err := svc.Update(ctx, pub.ID, in, writer); !errors.Is(err, domain.ErrNoPermission) {
 		t.Fatalf("published->draft by writer: %v", err)
 	}
-	if err := svc.Delete(ctx, pub.ID, writer); !errors.Is(err, domain.ErrNoPermission) {
+	if err := svc.Delete(ctx, pub.ID, nil, writer); !errors.Is(err, domain.ErrNoPermission) {
 		t.Fatalf("delete published by writer: %v", err)
 	}
 	if _, err := svc.Bulk(ctx, BulkInput{Action: "publish", IDs: []string{pub.ID}}, writer); !errors.Is(err, domain.ErrNoPermission) {
@@ -100,7 +100,7 @@ func TestPostPublishPermission(t *testing.T) {
 	other := validPost()
 	other.Slug, other.Status = "writer-draft", "draft"
 	d2, _ := svc.Create(ctx, other, writer)
-	if err := svc.Delete(ctx, d2.ID, writer); err != nil {
+	if err := svc.Delete(ctx, d2.ID, nil, writer); err != nil {
 		t.Fatalf("delete own draft: %v", err)
 	}
 	if d2.CreatedBy != nil {
@@ -147,7 +147,7 @@ func TestPostAuditTransitionsAndSchedule(t *testing.T) {
 	if _, err = svc.Update(ctx, p.ID, in, testOwner); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Delete(ctx, p.ID, testOwner); err != nil {
+	if err := svc.Delete(ctx, p.ID, nil, testOwner); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"post.create", "post.schedule", "post.publish", "post.update", "post.unpublish", "post.delete"}
@@ -220,7 +220,7 @@ func TestBulk(t *testing.T) {
 	if len(res.Succeeded) != 2 || len(res.Failed) != 3 {
 		t.Fatalf("result: %+v", res)
 	}
-	if len(rv.tags) != 1 || strings.Join(rv.tags[0], ",") != "posts,post:d1" {
+	if len(rv.tags) != 1 || strings.Join(rv.tags[0], ",") != "posts,post:d1,redirects" {
 		t.Fatalf("one revalidate call expected: %v", rv.tags)
 	}
 	if got := au.actions(); len(got) != 1 || got[0] != domain.AuditPostPublish || au.last().Metadata["bulk"] != true {
@@ -288,7 +288,7 @@ func TestSchedulerRunOnce(t *testing.T) {
 	store := fake.New()
 	rv := &recRevalidator{}
 	au := &recAuditor{}
-	posts := NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, NopAuditor{}, discard)
+	posts := NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), testRedirects(store), rv, NopAuditor{}, discard)
 	t0 := time.Date(2026, 11, 14, 3, 0, 0, 0, time.UTC)
 	posts.Now = func() time.Time { return t0 }
 	at1, at2 := t0.Add(time.Hour), t0.Add(3*time.Hour)
@@ -317,7 +317,7 @@ func TestSchedulerRunOnce(t *testing.T) {
 		ev.Metadata["slug"] != "soon" {
 		t.Fatalf("audit: %+v", ev)
 	}
-	if len(rv.tags) != 1 || strings.Join(rv.tags[0], ",") != "posts,post:soon" {
+	if len(rv.tags) != 1 || strings.Join(rv.tags[0], ",") != "posts,redirects,post:soon" {
 		t.Fatalf("revalidate: %v", rv.tags)
 	}
 	if n, _ := sch.RunOnce(ctx); n != 0 {

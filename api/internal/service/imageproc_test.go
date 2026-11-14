@@ -365,7 +365,7 @@ func TestMediaUploadAltAndDelete(t *testing.T) {
 	au := &recAuditor{}
 	ms := &memStore{files: map[string][]byte{}}
 	svc := NewMediaService(store.MediaRepo(), ms, 1<<20, 0, au, discard)
-	posts := NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), &recRevalidator{},
+	posts := NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), testRedirects(store), &recRevalidator{},
 		NopAuditor{}, discard)
 
 	if _, err := svc.Upload(ctx, bytes.NewReader(encodePNG(t, quadrants())), "a.png", strings.Repeat("ก", 301), testOwner); fieldErrs(t, err)["alt"] == "" {
@@ -408,7 +408,7 @@ func TestMediaUploadAltAndDelete(t *testing.T) {
 	if err != nil || upd.Alt != "ใหม่" || au.last().Action != domain.AuditMediaUpdate {
 		t.Fatalf("alt: %+v %v", upd, err)
 	}
-	_ = posts.Delete(ctx, p.ID, testOwner)
+	_ = posts.Delete(ctx, p.ID, nil, testOwner)
 	if err := svc.Delete(ctx, m.ID, testOwner); err != nil {
 		t.Fatal(err)
 	}

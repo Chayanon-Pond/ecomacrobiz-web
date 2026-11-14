@@ -67,7 +67,7 @@ func (r posts) SlugsTaken(_ context.Context, candidates []string, excludeID stri
 	return out, nil
 }
 
-func (r posts) SetStatus(_ context.Context, id string, st domain.PostStatus, at *time.Time) (domain.Post, error) {
+func (r posts) SetStatus(_ context.Context, id string, st domain.PostStatus, at *time.Time, plan *repository.RedirectPlan) (domain.Post, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.find(id)
@@ -75,6 +75,7 @@ func (r posts) SetStatus(_ context.Context, id string, st domain.PostStatus, at 
 		return domain.Post{}, domain.ErrNotFound
 	}
 	row.Status, row.PublishedAt, row.UpdatedAt = st, at, r.Now().UTC()
+	r.applyPlan(plan)
 	return clonePost(row.Post), nil
 }
 
@@ -85,7 +86,9 @@ func (r posts) PublishDue(_ context.Context, now time.Time) ([]domain.PostRef, e
 	for _, p := range r.posts {
 		if !p.deleted && p.Status == domain.PostScheduled && p.PublishedAt != nil && !p.PublishedAt.After(now) {
 			p.Status = domain.PostPublished
-			out = append(out, domain.PostRef{ID: p.ID, Slug: p.Slug})
+			ref := domain.PostRef{ID: p.ID, Slug: p.Slug, LegacySlugs: slices.Clone(p.LegacySlugs)}
+			out = append(out, ref)
+			r.applyPlan(&repository.RedirectPlan{Remove: ref.Paths()})
 		}
 	}
 	return out, nil
@@ -328,10 +331,14 @@ func (s *Store) usage(m domain.Media) []domain.MediaUsage {
 			continue
 		}
 		cover := p.CoverMediaID != nil && *p.CoverMediaID == m.ID
-		if cover || strings.Contains(p.BodyMarkdown, m.StorageKey) {
+		og := p.OGMediaID != nil && *p.OGMediaID == m.ID
+		if cover || og || strings.Contains(p.BodyMarkdown, m.StorageKey) {
 			kind := "body"
-			if cover {
+			switch {
+			case cover:
 				kind = "cover"
+			case og:
+				kind = "og"
 			}
 			out = append(out, domain.MediaUsage{PostID: p.ID, Title: p.Title, Slug: p.Slug, Status: p.Status, Kind: kind})
 		}
