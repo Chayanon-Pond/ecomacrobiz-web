@@ -3,6 +3,13 @@
 import { useGsap } from "@/lib/animations/use-gsap";
 
 /**
+ * Opacity of not-yet-read words. 0.42 on the near-black background gives a
+ * 3.8:1 contrast (WCAG AA for large text; every ScrubText is >= 24px), so the
+ * text stays readable before/without scrolling. Mirrors globals.css.
+ */
+const SCRUB_DIM = 0.42;
+
+/**
  * Apple-style "read as you scroll" text: words brighten progressively with
  * scroll position. Segments come pre-split from the server (Thai-aware).
  * Spans are inline (not inline-block) so native Thai line breaking is kept.
@@ -20,7 +27,7 @@ export function ScrubText({
     const words = el.querySelectorAll(".scrub-word");
     gsap.fromTo(
       words,
-      { opacity: 0.22 },
+      { opacity: SCRUB_DIM },
       {
         opacity: 1,
         ease: "none",

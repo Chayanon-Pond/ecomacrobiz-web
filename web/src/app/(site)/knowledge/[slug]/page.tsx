@@ -7,6 +7,7 @@ import { bundledPosts } from "@/content/posts";
 import { knowledgePage } from "@/content/knowledge";
 import { getAllPostSlugs, getPost, getRelatedPosts, normalizeSlug } from "@/lib/posts";
 import { JsonLd, absUrl, blogPostingJsonLd, breadcrumbJsonLd } from "@/lib/seo/jsonld";
+import { postShareImage } from "@/lib/seo/og";
 import { Markdown, extractHeadings } from "@/components/content/Markdown";
 import { PageCta } from "@/components/pages/shared/PageCta";
 import { PostCard } from "@/components/knowledge/PostCard";
@@ -39,22 +40,21 @@ export async function generateStaticParams() {
 export const ensureStatic = "navigation";
 
 /*
- * OG image: the post cover (real photo, already 1.6–1.9:1, ≤1920 px) instead
- * of a generated opengraph-image.tsx — ImageResponse needs a Thai font file
- * (IBM Plex Sans Thai TTF) loaded at build time, which would add a network
- * dependency or a binary asset to the repo for little gain.
+ * Share image: og_image override -> cover -> generated /knowledge/<slug>/og
+ * (lib/seo/og.ts). canonical_url (absolute) overrides the canonical link;
+ * noindex posts get robots noindex,follow (and stay out of the sitemap).
  */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const post = await getPost((await params).slug);
   if (!post) return { title: "ไม่พบบทความ", robots: { index: false } };
   const path = postHref(post.slug);
-  const images = post.cover
-    ? [{ url: post.cover.src, width: post.cover.width, height: post.cover.height, alt: post.cover.alt }]
-    : undefined;
+  const image = postShareImage(post);
+  const images = [{ url: image.url, width: image.width, height: image.height, alt: image.alt }];
   return {
     title: post.seoTitle,
     description: post.seoDescription,
-    alternates: { canonical: path },
+    alternates: { canonical: post.canonicalUrl || path },
+    robots: post.noindex ? { index: false, follow: true } : undefined,
     authors: [{ name: post.author }],
     openGraph: {
       type: "article",
@@ -73,7 +73,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       card: "summary_large_image",
       title: post.seoTitle,
       description: post.seoDescription,
-      images: images?.map((i) => i.url),
+      images,
     },
   };
 }
@@ -102,9 +102,10 @@ async function Article({ params }: { params: Params }) {
           ]),
           blogPostingJsonLd({
             path,
+            canonical: post.canonicalUrl,
             title: post.title,
             description: post.seoDescription,
-            image: post.cover?.src,
+            image: postShareImage(post),
             datePublished: post.publishedAt,
             dateModified: post.updatedAt,
             author: post.author,

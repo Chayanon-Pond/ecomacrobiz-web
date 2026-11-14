@@ -49,37 +49,98 @@ export function faqPageJsonLd(items: { question: string; answer: string }[]): Js
   };
 }
 
+export const ORGANIZATION_ID = `${site.url.replace(/\/$/, "")}/#organization`;
+export const WEBSITE_ID = `${site.url.replace(/\/$/, "")}/#website`;
+
+const logo = { "@type": "ImageObject", url: absUrl("/images/logo.png"), width: 512, height: 512 } as const;
+
+/** Short reference used inside other nodes (resolves to organizationJsonLd by @id). */
 export const organizationRef = {
   "@type": "Organization",
+  "@id": ORGANIZATION_ID,
   name: site.name,
   url: site.url,
-  logo: { "@type": "ImageObject", url: absUrl("/images/logo.png") },
+  logo,
 } as const;
+
+/**
+ * Site-wide Organization. No ProfessionalService/LocalBusiness: those need a
+ * street address, and content/ has none (contact.ts: "The Wix page has no
+ * address, map or email").
+ * TODO(address): once the company address is confirmed, add
+ * `address: { "@type": "PostalAddress", ... }` here and switch @type to
+ * ["Organization", "ProfessionalService"].
+ */
+export function organizationJsonLd(sameAs: string[]): Json {
+  return {
+    "@context": "https://schema.org",
+    ...organizationRef,
+    legalName: site.legalName,
+    description: site.description,
+    telephone: site.contact.phoneE164,
+    areaServed: "TH",
+    sameAs,
+    contactPoint: {
+      "@type": "ContactPoint",
+      telephone: site.contact.phoneE164,
+      contactType: "customer service",
+      availableLanguage: ["th", "en"],
+    },
+  };
+}
+
+/** No SearchAction: the site has no search page. */
+export function websiteJsonLd(): Json {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": WEBSITE_ID,
+    name: site.name,
+    url: site.url,
+    description: site.description,
+    inLanguage: "th-TH",
+    publisher: { "@id": ORGANIZATION_ID },
+  };
+}
+
+export type JsonLdImage = { url: string; width: number; height: number };
 
 export function blogPostingJsonLd(p: {
   path: string;
+  /** Canonical URL when overridden (post.canonical_url), else the post URL. */
+  canonical?: string;
   title: string;
   description: string;
-  image?: string;
+  image: JsonLdImage;
   datePublished: string;
   dateModified?: string;
   author?: string;
   section?: string;
 }): Json {
+  const url = absUrl(p.path);
   return {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    mainEntityOfPage: { "@type": "WebPage", "@id": absUrl(p.path) },
-    headline: p.title,
+    "@id": `${url}#article`,
+    url,
+    mainEntityOfPage: { "@type": "WebPage", "@id": p.canonical || url },
+    headline: p.title.length > 110 ? `${Array.from(p.title).slice(0, 109).join("")}…` : p.title,
     description: p.description,
-    image: p.image ? [absUrl(p.image)] : undefined,
-    datePublished: p.datePublished,
-    dateModified: p.dateModified ?? p.datePublished,
+    image: { "@type": "ImageObject", url: absUrl(p.image.url), width: p.image.width, height: p.image.height },
+    datePublished: toIso(p.datePublished),
+    dateModified: toIso(p.dateModified ?? p.datePublished),
     author: p.author ? { "@type": "Person", name: p.author } : organizationRef,
     publisher: organizationRef,
-    articleSection: p.section,
+    ...(p.section ? { articleSection: p.section } : {}),
     inLanguage: "th-TH",
+    isPartOf: { "@id": WEBSITE_ID },
   };
+}
+
+/** ISO 8601 with timezone (API timestamps already are; this guards bundle data). */
+export function toIso(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toISOString();
 }
 
 export function webPageJsonLd(
@@ -93,6 +154,6 @@ export function webPageJsonLd(
     name: p.name,
     description: p.description,
     inLanguage: "th-TH",
-    isPartOf: { "@type": "WebSite", name: site.name, url: site.url },
+    isPartOf: { "@type": "WebSite", "@id": WEBSITE_ID, name: site.name, url: site.url },
   };
 }

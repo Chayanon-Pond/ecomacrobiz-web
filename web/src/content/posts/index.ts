@@ -35,6 +35,12 @@ export type PostSummary = {
   updatedAt: string;
   readingMinutes: number;
   featured: boolean;
+  /** Per-post robots noindex (still listed on /knowledge, kept out of the sitemap). */
+  noindex: boolean;
+  /** Absolute canonical URL override; "" = the post's own URL. */
+  canonicalUrl: string;
+  /** Explicit social-share image; wins over the cover for og:image. */
+  ogImage: PostImage | null;
 };
 
 export type Post = PostSummary & {
@@ -44,7 +50,8 @@ export type Post = PostSummary & {
 };
 
 /** Shape of posts.json (category slugs instead of refs). */
-type BundlePost = Omit<Post, "categories"> & { categories: string[] };
+type SeoFields = "noindex" | "canonicalUrl" | "ogImage";
+type BundlePost = Omit<Post, "categories" | SeoFields> & Partial<Pick<Post, SeoFields>> & { categories: string[] };
 type BundleCategory = Omit<Category, "postCount">;
 type Bundle = { categories: BundleCategory[]; posts: BundlePost[] };
 
@@ -57,7 +64,13 @@ function toRef(slug: string): CategoryRef {
 
 /** Newest first (published_at desc), same order as the API. */
 export const bundledPosts: Post[] = data.posts
-  .map((p) => ({ ...p, categories: p.categories.map(toRef) }))
+  .map((p) => ({
+    noindex: false,
+    canonicalUrl: "",
+    ogImage: null,
+    ...p,
+    categories: p.categories.map(toRef),
+  }))
   .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
 
 export const bundledCategories: Category[] = data.categories.map((c) => ({

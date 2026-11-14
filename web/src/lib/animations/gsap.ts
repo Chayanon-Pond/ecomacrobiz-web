@@ -1,9 +1,13 @@
 /**
  * Lazy GSAP loader.
  *
- * GSAP + ScrollTrigger are only fetched in the browser, after hydration, and
- * only when motion is enabled. Every animated section awaits `loadGsap()`;
- * the module promise is shared so the code is downloaded once.
+ * GSAP + ScrollTrigger are only fetched in the browser, when motion is
+ * enabled, and only once the visitor engages with the page (scroll, wheel,
+ * touch, key, pointer) or it was opened already scrolled. Everything GSAP
+ * drives is scroll-linked, so nothing is lost before that, and parsing +
+ * scene setup stays out of the initial load (Total Blocking Time). Reveals
+ * and entrance effects do not need GSAP (MotionRuntime + CSS).
+ * Every animated section awaits `loadGsap()`; the promise is shared.
  */
 import type { gsap as GsapType } from "gsap";
 import type { ScrollTrigger as ScrollTriggerType } from "gsap/ScrollTrigger";
@@ -26,9 +30,31 @@ export function whenIdle(timeout = 1200): Promise<void> {
   });
 }
 
+const ENGAGE_EVENTS = ["scroll", "wheel", "touchstart", "pointerdown", "pointermove", "keydown"] as const;
+
+/** Resolves on the first sign of engagement (or immediately if already scrolled). */
+export function whenEngaged(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return;
+    if (window.scrollY > 0) return resolve();
+    const done = () => {
+      ENGAGE_EVENTS.forEach((e) => window.removeEventListener(e, done, true));
+      resolve();
+    };
+    ENGAGE_EVENTS.forEach((e) => window.addEventListener(e, done, { capture: true, passive: true }));
+  });
+}
+
+let loaded: GsapBundle | null = null;
+
+/** The GSAP bundle if it has already loaded (never triggers a download). */
+export function gsapIfLoaded(): GsapBundle | null {
+  return loaded;
+}
+
 export function loadGsap(): Promise<GsapBundle> {
   if (!bundlePromise) {
-    bundlePromise = whenIdle().then(() => Promise.all([
+    bundlePromise = whenEngaged().then(() => whenIdle(300)).then(() => Promise.all([
       import("gsap"),
       import("gsap/ScrollTrigger"),
     ])).then(([g, st]) => {
@@ -38,7 +64,8 @@ export function loadGsap(): Promise<GsapBundle> {
       gsap.defaults({ ease: "power3.out", duration: 1 });
       // iOS Safari: avoid refreshing on the address-bar resize (jank).
       ScrollTrigger.config({ ignoreMobileResize: true });
-      return { gsap, ScrollTrigger };
+      loaded = { gsap, ScrollTrigger };
+      return loaded;
     });
   }
   return bundlePromise;

@@ -126,7 +126,9 @@ export function ArticleCover({ cover }: { cover: PostSummary["cover"] }) {
           alt={cover.alt}
           width={cover.width}
           height={cover.height}
-          priority
+          // LCP on article pages: <link rel=preload> in <head> + high fetch priority.
+          preload
+          fetchPriority="high"
           quality={85}
           sizes="(min-width: 1440px) 1344px, 94vw"
           unoptimized={!isLocalImage(cover.src)}

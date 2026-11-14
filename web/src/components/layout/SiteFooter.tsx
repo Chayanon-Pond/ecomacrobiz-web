@@ -5,7 +5,8 @@ import { SocialIcon } from "@/components/ui/SocialIcon";
 
 export function SiteFooter() {
   return (
-    <footer className="relative overflow-hidden border-t border-line bg-ink">
+    // Below the fold everywhere: skip its layout/paint until it nears the viewport.
+    <footer className="relative overflow-hidden border-t border-line bg-ink [content-visibility:auto] [contain-intrinsic-size:auto_40rem]">
       <div className="container-page grid gap-12 pb-10 pt-16 md:grid-cols-2 md:pt-20 lg:grid-cols-[1.4fr_1fr_1fr]">
         <div className="flex flex-col gap-5">
           <LogoMark className="h-6 w-auto self-start" />

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --import ./tests/setup.mjs --experimental-test-module-mocks --test \"tests/**/*.test.mts\"",
     "verify:roundtrip": "tsx scripts/verify-markdown-roundtrip.ts"
   },
   "dependencies": {

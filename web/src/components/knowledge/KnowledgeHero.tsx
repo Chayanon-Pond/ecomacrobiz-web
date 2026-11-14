@@ -115,7 +115,8 @@ export function FeaturedPost({ post }: { post: PostSummary }) {
                 src={post.cover.src}
                 alt={post.cover.alt}
                 fill
-                priority
+                preload
+                fetchPriority="high"
                 sizes="100vw"
                 unoptimized={!isLocalImage(post.cover.src)}
                 className="object-cover object-center will-change-transform"

@@ -13,6 +13,15 @@
  *                           the prerendered shell, see cacheLife docs)
  *   - API OK             -> lists cacheLife('hours'), posts cacheLife('days');
  *                           edits arrive earlier via revalidateTag
+ *
+ * Fallback policy when the API IS reachable:
+ *   - the API is the source of truth as soon as it reports >= 1 published
+ *     post (meta.total of the unfiltered list);
+ *   - with ZERO published posts (fresh/empty DB) lists, categories and single
+ *     posts come from the bundle, so the site never shows an empty blog;
+ *   - a slug the API answers 404 for falls back to the bundle ONLY in that
+ *     zero-posts case; otherwise it is a real 404 (unpublished/deleted posts
+ *     must disappear, the proxy then serves their 301/410).
  * Composite helpers (featured, related, all slugs) are NOT cached themselves:
  * they only combine cached readers, so the readers' lifetimes stay in charge
  * (an explicit outer cacheLife would hide a short fallback lifetime).
@@ -46,6 +55,7 @@ export type PostsPage = {
 /* ---------------- API wire types (snake_case) ---------------- */
 
 type ApiCover = { url: string; alt?: string | null; width?: number | null; height?: number | null } | null;
+type ApiPostSeo = { noindex?: boolean | null; canonical_url?: string | null; og_image?: ApiCover };
 type ApiCategoryRef = { slug: string; name: string; name_th?: string | null };
 type ApiPostSummary = {
   id: string;
@@ -61,7 +71,7 @@ type ApiPostSummary = {
   featured: boolean;
   seo_title?: string | null;
   seo_description?: string | null;
-};
+} & ApiPostSeo;
 type ApiPost = ApiPostSummary & { body_markdown: string; legacy_slugs?: string[] | null };
 type ApiMeta = { page: number; per_page: number; total: number; total_pages: number };
 type ApiCategory = { slug: string; name: string; name_th?: string | null; description?: string | null; post_count?: number };
@@ -71,6 +81,18 @@ type ApiCategory = { slug: string; name: string; name_th?: string | null; descri
 function mapCover(c: ApiCover, fallbackAlt: string): PostImage | null {
   if (!c?.url || !c.width || !c.height) return null; // no dimensions -> no CLS-safe image
   return { src: c.url, width: c.width, height: c.height, alt: c.alt?.trim() || fallbackAlt };
+}
+
+/** Only an absolute http(s) URL is a usable canonical override. */
+function cleanCanonical(url: string | null | undefined): string {
+  const u = url?.trim() ?? "";
+  if (!u) return "";
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function mapSummary(p: ApiPostSummary): PostSummary {
@@ -87,6 +109,9 @@ function mapSummary(p: ApiPostSummary): PostSummary {
     updatedAt: p.updated_at || p.published_at,
     readingMinutes: Math.max(1, Math.round(p.reading_minutes || 1)),
     featured: Boolean(p.featured),
+    noindex: Boolean(p.noindex),
+    canonicalUrl: cleanCanonical(p.canonical_url),
+    ogImage: mapCover(p.og_image ?? null, p.title),
   };
 }
 
@@ -154,6 +179,29 @@ function bundlePost(slug: string): Post | null {
   return bundledPosts.find((p) => p.slug === slug || p.legacySlugs.includes(slug)) ?? null;
 }
 
+/**
+ * True when the API is reachable and reports zero published posts in total
+ * (fresh database) -> the bundle stands in. Any API failure here returns
+ * false: the caller already got a real answer from the API and trusts it.
+ */
+async function apiHasNoPosts(): Promise<boolean> {
+  try {
+    return (await getApiPostTotal()) === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function getApiPostTotal(): Promise<number> {
+  "use cache";
+  cacheTag("posts");
+  const res = await apiGet<{ data: ApiPostSummary[]; meta: ApiMeta }>("/api/v1/posts", {
+    query: { page: 1, per_page: 1 },
+  });
+  cacheLife("hours");
+  return res.meta.total;
+}
+
 /* ---------------- public readers ---------------- */
 
 /** Newest-first page of published posts, optionally within one category. */
@@ -166,6 +214,8 @@ export async function getPostsPage({ page, category }: { page?: number; category
       query: { page: p, per_page: POSTS_PER_PAGE, category },
     });
     cacheLife("hours");
+    // An empty category says nothing about the API as a whole: ask for the total.
+    if (res.meta.total === 0 && (!category || (await apiHasNoPosts()))) return bundlePage(p, category);
     return {
       posts: res.data.map(mapSummary),
       page: res.meta.page,
@@ -176,6 +226,7 @@ export async function getPostsPage({ page, category }: { page?: number; category
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       cacheLife("hours");
+      if (await apiHasNoPosts()) return bundlePage(p, category);
       return { posts: [], page: p, perPage: POSTS_PER_PAGE, total: 0, totalPages: 1 };
     }
     warnFallback("getPostsPage", err);
@@ -207,7 +258,7 @@ export async function getPost(slug: string): Promise<Post | null> {
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       cacheLife("days");
-      return null;
+      return (await apiHasNoPosts()) ? bundlePost(key) : null;
     }
     warnFallback("getPost", err);
     fallbackCacheLife(err);
@@ -222,6 +273,8 @@ export async function getCategories(): Promise<Category[]> {
   try {
     const res = await apiGet<{ data: ApiCategory[] }>("/api/v1/categories");
     cacheLife("hours");
+    // Bundle lists are served while the API has no posts: keep counts consistent.
+    if (await apiHasNoPosts()) return bundledCategories;
     return res.data.map((c) => ({
       slug: c.slug,
       name: c.name,
