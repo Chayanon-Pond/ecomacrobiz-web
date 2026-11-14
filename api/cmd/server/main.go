@@ -180,6 +180,19 @@ func buildNotifiers(cfg *config.Config, log *slog.Logger) []notify.Notifier {
 	return ns
 }
 
+// directSender is the transport for invitation/reset e-mails: the same one
+// as lead e-mails (Resend wins over SMTP), or nil when none is configured.
+func directSender(cfg *config.Config) notify.DirectSender {
+	switch cfg.EmailProvider() {
+	case "resend":
+		return notify.NewResend(cfg.ResendAPIKey, cfg.SMTPFrom, cfg.SMTPTo)
+	case "smtp":
+		return notify.NewEmail(notify.EmailConfig{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword, From: cfg.SMTPFrom, To: cfg.SMTPTo})
+	}
+	return nil
+}
+
 func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	pool, err := openPool(ctx, cfg)
 	if err != nil {
@@ -194,6 +207,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 
 	store := repository.NewStore(pool)
+	audit := service.NewAuditService(store.Audit, log)
 	media, err := storage.NewLocalDisk(cfg.MediaDir, cfg.PublicBaseURL)
 	if err != nil {
 		return err
@@ -205,16 +219,35 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if cfg.WebRevalidateURL == "" {
 		log.Info("revalidate webhook disabled (WEB_REVALIDATE_URL unset)")
 	}
+	indexNow := notify.NewIndexNow(cfg.IndexNowKey, cfg.WebBaseURL, log)
+	if indexNow.Enabled() {
+		log.Info("indexnow enabled", "host", cfg.WebBaseURL)
+	} else {
+		log.Info("indexnow disabled (needs INDEXNOW_KEY and WEB_BASE_URL)")
+	}
+	redirects := service.NewRedirectService(store.Redirects, store.Posts, revalidator, audit, log)
+	redirects.SetSiteBaseURL(cfg.WebBaseURL)
+	posts := service.NewPostService(store.Posts, store.Categories, store.Media, redirects, revalidator, audit, log)
+	posts.SetIndexer(indexNow)
 
 	auth := service.NewAuthService(store.AdminUsers, store.Sessions, cfg.SessionTTL, 0, log)
+	auth.SetAuditor(audit)
 	if err := bootstrapAdmin(ctx, cfg, auth, log); err != nil {
 		return err
 	}
+	mailer := notify.NewMailer(directSender(cfg), log, 15*time.Second)
+	if !mailer.Enabled() || cfg.WebBaseURL == "" {
+		log.Info("invite/reset e-mails disabled (needs WEB_BASE_URL and an e-mail transport); owners copy the links")
+	}
+	users := service.NewUserService(store.AdminUsers, store.Sessions, store.Tokens, auth, audit, mailer,
+		service.UserServiceConfig{InviteTTL: cfg.InviteTTL, WebBaseURL: cfg.WebBaseURL}, log)
 
 	contactLim := ratelimit.New(cfg.ContactRateLimit.Events, cfg.ContactRateLimit.Per)
 	loginIPLim := ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per)
 	loginEmailLim := ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per)
-	for _, l := range []*ratelimit.Limiter{contactLim, loginIPLim, loginEmailLim} {
+	tokenLim := ratelimit.New(20, 10*time.Minute)   // public invite/reset token endpoints, per IP
+	passwordLim := ratelimit.New(5, 15*time.Minute) // PUT /account/password, per user
+	for _, l := range []*ratelimit.Limiter{contactLim, loginIPLim, loginEmailLim, tokenLim, passwordLim} {
 		l.StartJanitor(time.Minute)
 		defer l.Stop()
 	}
@@ -223,21 +256,39 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Config:            cfg,
 		Log:               log,
 		DB:                pool,
-		Posts:             service.NewPostService(store.Posts, store.Categories, store.Media, revalidator, log),
+		Posts:             posts,
+		Redirects:         redirects,
 		Contact:           service.NewContactService(store.Leads, dispatcher, log),
 		Auth:              auth,
-		Leads:             service.NewLeadService(store.Leads, log),
-		Media:             service.NewMediaService(store.Media, media, cfg.MaxUploadBytes, log),
+		Leads:             service.NewLeadService(store.Leads, audit, log),
+		Media:             service.NewMediaService(store.Media, media, cfg.MaxUploadBytes, cfg.MediaMaxDimension, audit, log),
 		MediaFiles:        media,
 		ContactLimiter:    contactLim,
 		LoginIPLimiter:    loginIPLim,
 		LoginEmailLimiter: loginEmailLim,
+		TokenLimiter:      tokenLim,
+		PasswordLimiter:   passwordLim,
+		Users:             users,
+		Account:           service.NewAccountService(store.AdminUsers, store.Sessions, auth, audit, log),
+		Audit:             audit,
 	})
 	if err != nil {
 		return err
 	}
 
 	go sessionJanitor(ctx, auth, log)
+
+	// Scheduled posts: runs once now, then every SCHEDULER_INTERVAL.
+	scheduler := service.NewPostScheduler(store.Posts, audit, revalidator, log)
+	scheduler.SetIndexer(indexNow)
+	schedCtx, stopScheduler := context.WithCancel(ctx)
+	schedDone := make(chan struct{})
+	go func() {
+		defer close(schedDone)
+		scheduler.Run(schedCtx, cfg.SchedulerInterval)
+	}()
+	defer func() { stopScheduler(); <-schedDone }()
+	log.Info("post scheduler started", "interval", cfg.SchedulerInterval.String())
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
@@ -269,8 +320,12 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("http shutdown", "err", err)
 	}
+	stopScheduler()
+	<-schedDone
 	dispatcher.Wait(shutdownCtx)
+	mailer.Wait(shutdownCtx)
 	revalidator.Wait(shutdownCtx)
+	indexNow.Wait(shutdownCtx)
 	log.Info("shutdown complete")
 	return nil
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -18,100 +19,52 @@ import (
 	"github.com/ecomacrobiz/escoma/api/internal/service"
 )
 
-type loginBody struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
+// ---- dashboard ----
 
-func (h *handler) login(c *gin.Context) {
-	now := time.Now()
-	if ok, wait := h.LoginIPLimiter.Allow(middleware.ClientIPKey(c), now); !ok {
-		middleware.AbortRateLimited(c, wait)
-		return
-	}
-	var in loginBody
-	if err := decodeJSON(c, &in); err != nil {
-		h.fail(c, err)
-		return
-	}
-	if email := service.NormalizeEmail(in.Email); email != "" {
-		if ok, wait := h.LoginEmailLimiter.Allow("email:"+email, now); !ok {
-			middleware.AbortRateLimited(c, wait)
+// dashboard: each section is null when the user lacks its read permission.
+func (h *handler) dashboard(c *gin.Context) {
+	ctx := c.Request.Context()
+	var out dashboardDTO
+	if middleware.PermFrom(c, domain.PermLeadsRead) {
+		d, err := h.Leads.Dashboard(ctx)
+		if err != nil {
+			h.fail(c, err)
 			return
 		}
+		out.Leads = toDashboardLeads(d)
 	}
-	res, err := h.Auth.Login(c.Request.Context(), in.Email, in.Password, service.RequestMeta{
-		IP: c.ClientIP(), UserAgent: c.Request.UserAgent()})
-	if errors.Is(err, domain.ErrUnauthorized) {
-		respond.Error(c, http.StatusUnauthorized, respond.CodeUnauthorized, domain.MsgInvalidLogin, nil)
-		return
+	if middleware.PermFrom(c, domain.PermPostsRead) {
+		d, err := h.Posts.Dashboard(ctx)
+		if err != nil {
+			h.fail(c, err)
+			return
+		}
+		out.Posts = toDashboardPosts(d)
 	}
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-	h.setSessionCookie(c, res.Token, h.Auth.TTL())
-	respond.Data(c, http.StatusOK, gin.H{"user": toUser(res.User), "csrf_token": res.CSRFToken})
-}
-
-func (h *handler) setSessionCookie(c *gin.Context, value string, ttl time.Duration) {
-	ck := &http.Cookie{
-		Name:     middleware.SessionCookie,
-		Value:    value,
-		Path:     "/",
-		Domain:   h.Config.CookieDomain,
-		HttpOnly: true,
-		Secure:   h.Config.CookieSecure,
-		SameSite: http.SameSiteStrictMode,
-	}
-	if ttl > 0 {
-		ck.MaxAge = int(ttl.Seconds())
-		ck.Expires = time.Now().Add(ttl).UTC()
-	} else {
-		ck.MaxAge = -1
-		ck.Expires = time.Unix(0, 0)
-	}
-	http.SetCookie(c.Writer, ck)
-}
-
-func (h *handler) logout(c *gin.Context) {
-	token, _ := c.Cookie(middleware.SessionCookie)
-	if err := h.Auth.Logout(c.Request.Context(), token); err != nil {
-		h.fail(c, err)
-		return
-	}
-	h.setSessionCookie(c, "", 0)
-	c.Status(http.StatusNoContent)
-}
-
-func (h *handler) me(c *gin.Context) {
-	u, _ := middleware.UserFrom(c)
-	s, _ := middleware.SessionFrom(c)
-	respond.Data(c, http.StatusOK, gin.H{"user": toUser(u), "csrf_token": s.CSRFToken})
-}
-
-func actorID(c *gin.Context) string {
-	u, _ := middleware.UserFrom(c)
-	return u.ID
+	respond.Data(c, http.StatusOK, out)
 }
 
 // ---- posts ----
 
 func (h *handler) adminListPosts(c *gin.Context) {
-	status := c.DefaultQuery("status", "all")
-	if status != "all" && status != "" && !domain.PostStatus(status).Valid() {
-		respond.Error(c, http.StatusUnprocessableEntity, respond.CodeValidation, domain.MsgValidationFailed,
-			map[string]string{"status": "สถานะต้องเป็น draft, published หรือ all"})
-		return
-	}
 	page := service.NormalizePage(queryInt(c, "page"), queryInt(c, "per_page"), 20, 100)
 	posts, total, err := h.Posts.AdminList(c.Request.Context(), repository.AdminPostFilter{
-		Page: page, Status: status, Query: c.Query("q")})
+		Page: page, Status: c.DefaultQuery("status", "all"), Query: c.Query("q"),
+		CategorySlug: c.Query("category"), Sort: c.Query("sort")})
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
-	respond.List(c, toSummaries(posts, true), respond.NewMeta(page, total))
+	respond.List(c, toAdminSummaries(posts), respond.NewMeta(page, total))
+}
+
+func (h *handler) adminSlugCheck(c *gin.Context) {
+	res, err := h.Posts.SlugCheck(c.Request.Context(), c.Query("slug"), c.Query("exclude_id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, res)
 }
 
 func (h *handler) adminGetPost(c *gin.Context) {
@@ -120,7 +73,7 @@ func (h *handler) adminGetPost(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	respond.Data(c, http.StatusOK, toPost(p, true))
+	respond.Data(c, http.StatusOK, toAdminPost(p))
 }
 
 func (h *handler) adminCreatePost(c *gin.Context) {
@@ -129,12 +82,12 @@ func (h *handler) adminCreatePost(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	p, err := h.Posts.Create(c.Request.Context(), in, actorID(c))
+	p, err := h.Posts.Create(c.Request.Context(), in, middleware.ActorFrom(c))
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
-	respond.Data(c, http.StatusCreated, toPost(p, true))
+	respond.Data(c, http.StatusCreated, toAdminPost(p))
 }
 
 func (h *handler) adminUpdatePost(c *gin.Context) {
@@ -143,24 +96,78 @@ func (h *handler) adminUpdatePost(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	p, err := h.Posts.Update(c.Request.Context(), c.Param("id"), in, actorID(c))
+	p, err := h.Posts.Update(c.Request.Context(), c.Param("id"), in, middleware.ActorFrom(c))
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
-	respond.Data(c, http.StatusOK, toPost(p, true))
+	respond.Data(c, http.StatusOK, toAdminPost(p))
 }
 
-func (h *handler) adminDeletePost(c *gin.Context) {
-	if err := h.Posts.Delete(c.Request.Context(), c.Param("id"), actorID(c)); err != nil {
+func (h *handler) adminBulkPosts(c *gin.Context) {
+	var in service.BulkInput
+	if err := decodeJSON(c, &in); err != nil {
+		h.fail(c, err)
+		return
+	}
+	res, err := h.Posts.Bulk(c.Request.Context(), in, middleware.ActorFrom(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, res)
+}
+
+// ---- media ----
+
+func (h *handler) listMedia(c *gin.Context) {
+	page := service.NormalizePage(queryInt(c, "page"), queryInt(c, "per_page"), 24, 100)
+	items, total, err := h.Media.List(c.Request.Context(), repository.MediaFilter{Page: page, Query: c.Query("q"),
+		Mime: strings.TrimSpace(c.Query("type"))})
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.List(c, toMediaList(items), respond.NewMeta(page, total))
+}
+
+func (h *handler) getMedia(c *gin.Context) {
+	m, usage, err := h.Media.Get(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, toMediaDetail(m, usage))
+}
+
+func (h *handler) updateMedia(c *gin.Context) {
+	var in struct {
+		Alt string `json:"alt"`
+	}
+	if err := decodeJSON(c, &in); err != nil {
+		h.fail(c, err)
+		return
+	}
+	m, err := h.Media.UpdateAlt(c.Request.Context(), c.Param("id"), in.Alt, middleware.ActorFrom(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, toMedia(m))
+}
+
+func (h *handler) deleteMedia(c *gin.Context) {
+	if err := h.Media.Delete(c.Request.Context(), c.Param("id"), middleware.ActorFrom(c)); err != nil {
 		h.fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-// ---- media ----
+const maxAltField = 4 << 10
 
+// uploadMedia reads multipart fields "file" (required) and "alt" (optional,
+// any order), then hands the file to the media service.
 func (h *handler) uploadMedia(c *gin.Context) {
 	mt, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
 	if err != nil || mt != "multipart/form-data" {
@@ -173,6 +180,12 @@ func (h *handler) uploadMedia(c *gin.Context) {
 		h.fail(c, respond.ErrBadJSON)
 		return
 	}
+	var (
+		file     []byte
+		fileName string
+		hasFile  bool
+		alt      string
+	)
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -187,52 +200,83 @@ func (h *handler) uploadMedia(c *gin.Context) {
 			respond.Error(c, http.StatusBadRequest, respond.CodeValidation, domain.MsgInvalidJSON, nil)
 			return
 		}
-		if part.FormName() != "file" {
-			_ = part.Close()
-			continue
+		switch part.FormName() {
+		case "file":
+			if hasFile {
+				break
+			}
+			hasFile, fileName = true, part.FileName()
+			file, err = io.ReadAll(io.LimitReader(part, h.Media.MaxBytes()+1))
+		case "alt":
+			var b []byte
+			b, err = io.ReadAll(io.LimitReader(part, maxAltField))
+			alt = string(b)
 		}
-		m, err := h.Media.Upload(c.Request.Context(), part, part.FileName(), actorID(c))
 		_ = part.Close()
 		if err != nil {
 			h.fail(c, err)
 			return
 		}
-		respond.Data(c, http.StatusCreated, mediaDTO{ID: m.ID, URL: m.URL, Width: m.Width, Height: m.Height,
-			Mime: m.Mime, Size: m.SizeBytes})
-		return
 	}
-	respond.Error(c, http.StatusUnprocessableEntity, respond.CodeValidation, domain.MsgValidationFailed,
-		map[string]string{"file": "กรุณาเลือกไฟล์"})
-}
-
-// ---- leads ----
-
-func leadStatusParam(c *gin.Context) (string, bool) {
-	s := strings.TrimSpace(c.Query("status"))
-	if s == "" || s == "all" {
-		return "", true
-	}
-	if !domain.LeadStatus(s).Valid() {
+	if !hasFile {
 		respond.Error(c, http.StatusUnprocessableEntity, respond.CodeValidation, domain.MsgValidationFailed,
-			map[string]string{"status": "สถานะไม่ถูกต้อง"})
-		return "", false
-	}
-	return s, true
-}
-
-func (h *handler) listLeads(c *gin.Context) {
-	status, ok := leadStatusParam(c)
-	if !ok {
+			map[string]string{"file": "กรุณาเลือกไฟล์"})
 		return
 	}
-	page := service.NormalizePage(queryInt(c, "page"), queryInt(c, "per_page"), 20, 100)
-	leads, total, err := h.Leads.List(c.Request.Context(), repository.LeadFilter{Page: page, Status: status,
-		Query: c.Query("q")})
+	m, err := h.Media.Upload(c.Request.Context(), bytes.NewReader(file), fileName, alt,
+		middleware.ActorFrom(c))
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
-	respond.List(c, toLeads(leads), respond.NewMeta(page, total))
+	respond.Data(c, http.StatusCreated, toMedia(m))
+}
+
+// ---- leads ----
+
+func leadQuery(c *gin.Context) service.LeadQuery {
+	return service.LeadQuery{Status: c.Query("status"), Q: c.Query("q"), Assigned: c.Query("assigned"),
+		From: c.Query("from"), To: c.Query("to")}
+}
+
+func (h *handler) listLeads(c *gin.Context) {
+	f, err := h.Leads.Filter(leadQuery(c), middleware.ActorFrom(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	f.Page = service.NormalizePage(queryInt(c, "page"), queryInt(c, "per_page"), 20, 100)
+	leads, total, err := h.Leads.List(c.Request.Context(), f)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.List(c, toLeads(leads), respond.NewMeta(f.Page, total))
+}
+
+func (h *handler) leadBoard(c *gin.Context) {
+	q := leadQuery(c)
+	q.Status, q.From, q.To = "", "", ""
+	f, err := h.Leads.Filter(q, middleware.ActorFrom(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	b, err := h.Leads.Board(c.Request.Context(), f)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, toBoard(b))
+}
+
+func (h *handler) leadAssignees(c *gin.Context) {
+	us, err := h.Leads.Assignees(c.Request.Context())
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, toUserRefs(us))
 }
 
 func (h *handler) getLead(c *gin.Context) {
@@ -250,7 +294,7 @@ func (h *handler) updateLead(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	l, err := h.Leads.Update(c.Request.Context(), c.Param("id"), in, actorID(c))
+	l, err := h.Leads.Update(c.Request.Context(), c.Param("id"), in, middleware.ActorFrom(c))
 	if err != nil {
 		h.fail(c, err)
 		return
@@ -258,11 +302,50 @@ func (h *handler) updateLead(c *gin.Context) {
 	respond.Data(c, http.StatusOK, toLead(l))
 }
 
+func (h *handler) leadActivity(c *gin.Context) {
+	as, err := h.Leads.Activities(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusOK, toActivities(as))
+}
+
+func (h *handler) addLeadNote(c *gin.Context) {
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := decodeJSON(c, &in); err != nil {
+		h.fail(c, err)
+		return
+	}
+	a, err := h.Leads.AddNote(c.Request.Context(), c.Param("id"), in.Body, middleware.ActorFrom(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	respond.Data(c, http.StatusCreated, toActivity(a))
+}
+
+func leadStatusParam(c *gin.Context) (string, bool) {
+	s := strings.TrimSpace(c.Query("status"))
+	if s == "" || s == "all" {
+		return "", true
+	}
+	if !domain.LeadStatus(s).Valid() {
+		respond.Error(c, http.StatusUnprocessableEntity, respond.CodeValidation, domain.MsgValidationFailed,
+			map[string]string{"status": "สถานะไม่ถูกต้อง"})
+		return "", false
+	}
+	return s, true
+}
+
 func (h *handler) exportLeads(c *gin.Context) {
 	status, ok := leadStatusParam(c)
 	if !ok {
 		return
 	}
+	actor := middleware.ActorFrom(c)
 	name := "leads-" + time.Now().In(service.Bangkok()).Format("20060102-1504")
 	if status != "" {
 		name += "-" + status
@@ -271,11 +354,11 @@ func (h *handler) exportLeads(c *gin.Context) {
 	hd.Set("Content-Type", "text/csv; charset=utf-8")
 	hd.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, name))
 	c.Status(http.StatusOK)
-	if err := h.Leads.ExportCSV(c.Request.Context(), c.Writer, status); err != nil {
+	if err := h.Leads.ExportCSV(c.Request.Context(), c.Writer, status, actor); err != nil {
 		// Headers are already sent; the truncated file is the best we can do.
-		h.Log.Error("lead export failed", "err", err, "actor", actorID(c))
+		h.Log.Error("lead export failed", "err", err, "actor", actor.ID)
 		c.Abort()
 		return
 	}
-	h.Log.Info("leads exported", "status", status, "actor", actorID(c))
+	h.Log.Info("leads exported", "status", status, "actor", actor.ID)
 }

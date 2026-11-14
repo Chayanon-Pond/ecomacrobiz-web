@@ -1,0 +1,235 @@
+/* Media library (page + picker). Admin tokens from tokens.css; prefix md-. */
+@layer components {
+
+.md-lib {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+}
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.md-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+}
+.md-lib[data-mode="picker"] .md-grid {
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  max-height: min(52dvh, 34rem);
+  overflow-y: auto;
+  padding: 2px;
+}
+@media (max-width: 479px) {
+  .md-grid,
+  .md-lib[data-mode="picker"] .md-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.md-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--adm-radius);
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s var(--adm-ease);
+}
+.md-card:hover {
+  border-color: var(--line-strong);
+}
+.md-card:focus-visible {
+  outline: 2px solid var(--adm-focus);
+  outline-offset: 2px;
+}
+.md-card[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.md-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--surface-2);
+  background-image: linear-gradient(45deg, var(--adm-hover) 25%, transparent 25%, transparent 75%, var(--adm-hover) 75%),
+    linear-gradient(45deg, var(--adm-hover) 25%, transparent 25%, transparent 75%, var(--adm-hover) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.md-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.md-usage,
+.md-noalt {
+  position: absolute;
+  top: 0.4rem;
+  backdrop-filter: blur(6px);
+}
+.md-usage {
+  left: 0.4rem;
+}
+.md-noalt {
+  right: 0.4rem;
+}
+.md-meta {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  min-width: 0;
+}
+.md-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.md-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 3rem 1.25rem;
+  text-align: center;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--adm-radius-lg);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.md-dropzone:hover:not(:disabled) {
+  border-color: var(--adm-accent-border);
+  background: var(--adm-accent-bg);
+}
+.md-dropzone:disabled {
+  cursor: default;
+}
+.md-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  border: 2px dashed var(--accent);
+  border-radius: var(--adm-radius-lg);
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  color: var(--fg);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.md-uploads {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--adm-radius);
+  background: var(--surface);
+}
+.md-upload {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.md-upload-thumb {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 0.45rem;
+  background: var(--surface-2);
+  color: var(--subtle);
+}
+.md-upload-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.md-progress {
+  display: block;
+  height: 0.3rem;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.md-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+.md-upload[data-status="done"] .md-progress > span {
+  background: var(--adm-success);
+}
+
+.md-detail-preview {
+  display: grid;
+  place-items: center;
+  max-height: 22rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--adm-radius);
+  background: var(--surface-2);
+  cursor: zoom-in;
+}
+.md-detail-preview img {
+  max-width: 100%;
+  max-height: 22rem;
+  object-fit: contain;
+}
+.md-usage-list {
+  display: grid;
+  gap: 0.35rem;
+}
+.md-usage-list li {
+  min-width: 0;
+  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--adm-radius-sm);
+  font-size: 0.875rem;
+}
+
+.adm-dialog.md-picker {
+  width: min(60rem, calc(100vw - 2rem));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-card,
+  .md-progress > span {
+    transition: none;
+  }
+}
+}

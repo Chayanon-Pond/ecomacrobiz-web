@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Thai, Inter_Tight } from "next/font/google";
 import "./globals.css";
-import { site, socials } from "@/content/site";
+import { site } from "@/content/site";
 import { MOTION_BOOTSTRAP } from "@/lib/animations/motion";
 
 const thai = IBM_Plex_Sans_Thai({
@@ -47,25 +47,6 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-const organizationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: site.name,
-  legalName: site.legalName,
-  url: site.url,
-  logo: `${site.url}/images/logo.png`,
-  description: site.description,
-  telephone: site.contact.phoneE164,
-  areaServed: "TH",
-  sameAs: socials.map((s) => s.href),
-  contactPoint: {
-    "@type": "ContactPoint",
-    telephone: site.contact.phoneE164,
-    contactType: "customer service",
-    availableLanguage: ["th", "en"],
-  },
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -81,15 +62,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: MOTION_BOOTSTRAP }} />
       </head>
       <body className="min-h-dvh">
-        {/* Public chrome (header/footer/motion) lives in app/(site)/layout.tsx;
+        {/* Public chrome (header/footer/motion) and the site-wide
+            Organization/WebSite JSON-LD live in app/(site)/layout.tsx;
             /admin has its own minimal layout. */}
         {children}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(organizationJsonLd).replace(/</g, "\\u003c"),
-          }}
-        />
       </body>
     </html>
   );

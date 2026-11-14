@@ -40,7 +40,7 @@ export function CategoryFilter({
               className="kn-chip inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors duration-300"
             >
               <span className="font-medium">{it.label}</span>
-              <span className="hidden font-display text-[0.7rem] tracking-[0.12em] opacity-70 sm:inline">{it.sub.toUpperCase()}</span>
+              <span className="hidden font-display text-[0.7rem] tracking-[0.12em] opacity-85 sm:inline">{it.sub.toUpperCase()}</span>
               <span className="kn-chip-count rounded-full px-2 py-0.5 font-display text-xs tabular-nums">
                 {it.count}
                 <span className="sr-only"> บทความ</span>

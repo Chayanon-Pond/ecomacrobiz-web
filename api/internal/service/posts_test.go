@@ -90,7 +90,7 @@ func TestCoverURL(t *testing.T) {
 func newPostSvc() (*PostService, *fake.Store, *recRevalidator) {
 	store := fake.New()
 	rv := &recRevalidator{}
-	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, discard), store, rv
+	return NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), testRedirects(store), rv, NopAuditor{}, discard), store, rv
 }
 
 func TestPostCreateUpdateDelete(t *testing.T) {
@@ -99,7 +99,7 @@ func TestPostCreateUpdateDelete(t *testing.T) {
 	fixed := time.Date(2026, 11, 12, 3, 0, 0, 0, time.UTC)
 	svc.Now = func() time.Time { return fixed }
 
-	p, err := svc.Create(ctx, validPost(), "admin-1")
+	p, err := svc.Create(ctx, validPost(), testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,19 +109,19 @@ func TestPostCreateUpdateDelete(t *testing.T) {
 	if len(p.Categories) != 1 || p.Categories[0].Name != "Brand Insight" {
 		t.Fatalf("categories: %+v", p.Categories)
 	}
-	if got := rv.tags[0]; len(got) != 2 || got[0] != "posts" || got[1] != "post:branding-vs-marketing" {
+	if got := rv.tags[0]; strings.Join(got, ",") != "posts,post:branding-vs-marketing,redirects" {
 		t.Fatalf("revalidate tags: %v", got)
 	}
 
 	// duplicate slug -> 422 on slug
-	if _, err := svc.Create(ctx, validPost(), ""); fieldErrs(t, err)["slug"] != "slug นี้ถูกใช้งานแล้ว" {
+	if _, err := svc.Create(ctx, validPost(), testOwner); fieldErrs(t, err)["slug"] != "slug นี้ถูกใช้งานแล้ว" {
 		t.Fatalf("duplicate slug: %v", err)
 	}
 	// unknown category
 	in := validPost()
 	in.Slug = "other"
 	in.Categories = []string{"nope"}
-	if _, err := svc.Create(ctx, in, ""); !strings.Contains(fieldErrs(t, err)["categories"], "nope") {
+	if _, err := svc.Create(ctx, in, testOwner); !strings.Contains(fieldErrs(t, err)["categories"], "nope") {
 		t.Fatalf("unknown category: %v", err)
 	}
 
@@ -129,29 +129,31 @@ func TestPostCreateUpdateDelete(t *testing.T) {
 	ls := []string{"แบรนด์ดิ้ง"}
 	in = validPost()
 	in.LegacySlugs = &ls
-	p, err = svc.Update(ctx, p.ID, in, "")
+	p, err = svc.Update(ctx, p.ID, in, testOwner)
 	if err != nil || len(p.LegacySlugs) != 1 {
 		t.Fatalf("update 1: %+v %v", p, err)
 	}
 	in = validPost()
 	in.Slug = "branding-and-marketing"
 	in.Title = "ใหม่"
-	p, err = svc.Update(ctx, p.ID, in, "")
-	if err != nil || p.Slug != "branding-and-marketing" || len(p.LegacySlugs) != 1 || !p.PublishedAt.Equal(fixed) {
+	p, err = svc.Update(ctx, p.ID, in, testOwner)
+	// the old slug of a published post becomes a legacy slug
+	if err != nil || p.Slug != "branding-and-marketing" || strings.Join(p.LegacySlugs, ",") != "แบรนด์ดิ้ง,branding-vs-marketing" ||
+		!p.PublishedAt.Equal(fixed) {
 		t.Fatalf("update 2: %+v %v", p, err)
 	}
 	last := rv.tags[len(rv.tags)-1]
-	if len(last) != 3 || last[2] != "post:branding-vs-marketing" {
+	if strings.Join(last, ",") != "posts,post:branding-and-marketing,post:branding-vs-marketing,redirects" {
 		t.Fatalf("old slug not revalidated: %v", last)
 	}
 
-	if err := svc.Delete(ctx, p.ID, ""); err != nil {
+	if err := svc.Delete(ctx, p.ID, nil, testOwner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Get(ctx, p.ID); err != domain.ErrNotFound {
 		t.Fatalf("after delete: %v", err)
 	}
-	if err := svc.Delete(ctx, "not-a-uuid", ""); err != domain.ErrNotFound {
+	if err := svc.Delete(ctx, "not-a-uuid", nil, testOwner); err != domain.ErrNotFound {
 		t.Fatalf("bad id: %v", err)
 	}
 }
@@ -164,7 +166,7 @@ func TestPublicVisibilityAndLegacySlug(t *testing.T) {
 
 	pub := validPost()
 	pub.LegacySlugs = &ls
-	if _, err := svc.Create(ctx, pub, ""); err != nil {
+	if _, err := svc.Create(ctx, pub, testOwner); err != nil {
 		t.Fatal(err)
 	}
 	draft := validPost()
@@ -172,7 +174,7 @@ func TestPublicVisibilityAndLegacySlug(t *testing.T) {
 	sched := validPost()
 	sched.Slug, sched.PublishedAt = "scheduled", &future
 	for _, in := range []PostInput{draft, sched} {
-		if _, err := svc.Create(ctx, in, ""); err != nil {
+		if _, err := svc.Create(ctx, in, testOwner); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -215,3 +217,6 @@ func TestEstimateReadingMinutes(t *testing.T) {
 		t.Errorf("4000 Thai chars = %d", got)
 	}
 }
+
+var testOwner = domain.Actor{ID: "00000000-0000-0000-0000-0000000000aa", Email: "owner@example.com",
+	Name: "Owner", Role: domain.RoleOwner}

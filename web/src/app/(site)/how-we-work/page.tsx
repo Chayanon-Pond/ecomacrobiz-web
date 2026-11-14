@@ -74,7 +74,7 @@ export default function HowWeWorkPage() {
         <div className="flex max-w-5xl flex-col gap-8">
           <ScrubText
             segments={segmentWords(p.principles[0])}
-            className="thai-heading text-[clamp(1.4rem,3vw,2.6rem)] font-semibold leading-[1.5] text-fg"
+            className="thai-heading text-[clamp(1.5rem,3vw,2.6rem)] font-semibold leading-[1.5] text-fg"
           />
           <p data-reveal className="max-w-3xl text-[clamp(1rem,1.4vw,1.125rem)] leading-[1.9] text-muted md:ml-auto md:max-w-xl">
             {p.principles[1]}

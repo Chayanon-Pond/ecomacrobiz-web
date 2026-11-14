@@ -1,0 +1,105 @@
+/*
+ * Admin theme tokens. Scoped to .adm-root so nothing leaks into public pages.
+ * The global token NAMES (--ink, --surface, --fg, --muted, --line…) are
+ * redefined here so Tailwind utilities (bg-surface, text-muted, border-line)
+ * inside the admin follow the active theme automatically.
+ *
+ * Theme: dark by default; light when <html data-adm-theme="light"> (set before
+ * paint by the inline script in app/admin/layout.tsx, toggled by ThemeToggle).
+ */
+.adm-root {
+  color-scheme: dark;
+
+  /* semantic extras (dark) */
+  --adm-accent-text: #7b8fff;
+  --adm-accent-bg: rgb(15 52 255 / 0.16);
+  --adm-accent-border: rgb(123 143 255 / 0.45);
+  --adm-hover: rgb(255 255 255 / 0.05);
+  --adm-press: rgb(255 255 255 / 0.08);
+  --adm-overlay: rgb(0 0 0 / 0.62);
+  --adm-elev-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --adm-elev-2: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --adm-focus: #7b8fff;
+  --adm-sidebar-bg: #08080d;
+
+  --adm-success: #6ee7a8;
+  --adm-success-bg: rgb(80 220 140 / 0.1);
+  --adm-success-border: rgb(80 220 140 / 0.4);
+  --adm-warning: #ffd27a;
+  --adm-warning-bg: rgb(245 196 107 / 0.1);
+  --adm-warning-border: rgb(245 196 107 / 0.42);
+  --adm-danger: #ff9b9b;
+  --adm-danger-bg: rgb(255 80 80 / 0.1);
+  --adm-danger-border: rgb(255 138 138 / 0.45);
+  --adm-info: #a9b6ff;
+  --adm-info-bg: rgb(15 52 255 / 0.14);
+  --adm-info-border: rgb(123 143 255 / 0.45);
+  --adm-violet: #d3b6ff;
+  --adm-violet-bg: rgb(160 110 255 / 0.12);
+  --adm-violet-border: rgb(180 140 255 / 0.42);
+
+  /* chart: one series, validated (dataviz validator) >= 3:1 vs surface */
+  --adm-chart-1: #4d66ff;
+  --adm-chart-1-hover: #7085ff;
+  --adm-chart-grid: rgb(255 255 255 / 0.07);
+  --adm-chart-axis: rgb(255 255 255 / 0.22);
+
+  --adm-radius-sm: 0.5rem;
+  --adm-radius: 0.75rem;
+  --adm-radius-lg: 1rem;
+  --adm-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --adm-sidebar-w: 15.5rem;
+  --adm-sidebar-w-collapsed: 4.25rem;
+  --adm-topbar-h: 3.75rem;
+}
+
+html[data-adm-theme="light"] .adm-root {
+  color-scheme: light;
+
+  --ink: #f4f5f9;
+  --ink-2: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --line: rgb(16 20 45 / 0.1);
+  --line-strong: rgb(16 20 45 / 0.2);
+  --fg: #0e0f16;
+  --muted: #4f5262;
+  --subtle: #6b6e7e;
+  --accent-soft: #0f34ff;
+
+  --adm-accent-text: #0f34ff;
+  --adm-accent-bg: rgb(15 52 255 / 0.08);
+  --adm-accent-border: rgb(15 52 255 / 0.35);
+  --adm-hover: rgb(16 20 45 / 0.045);
+  --adm-press: rgb(16 20 45 / 0.08);
+  --adm-overlay: rgb(14 15 22 / 0.45);
+  --adm-elev-1: 0 1px 2px rgb(16 20 45 / 0.08);
+  --adm-elev-2: 0 14px 36px rgb(16 20 45 / 0.16), 0 2px 6px rgb(16 20 45 / 0.08);
+  --adm-focus: #0f34ff;
+  --adm-sidebar-bg: #ffffff;
+
+  --adm-success: #0b7a45;
+  --adm-success-bg: rgb(16 160 90 / 0.1);
+  --adm-success-border: rgb(16 160 90 / 0.35);
+  --adm-warning: #8a5a00;
+  --adm-warning-bg: rgb(230 160 30 / 0.14);
+  --adm-warning-border: rgb(200 140 20 / 0.42);
+  --adm-danger: #b42318;
+  --adm-danger-bg: rgb(220 50 40 / 0.08);
+  --adm-danger-border: rgb(220 50 40 / 0.35);
+  --adm-info: #1f3bd9;
+  --adm-info-bg: rgb(15 52 255 / 0.08);
+  --adm-info-border: rgb(15 52 255 / 0.3);
+  --adm-violet: #6b2fd6;
+  --adm-violet-bg: rgb(120 60 230 / 0.08);
+  --adm-violet-border: rgb(120 60 230 / 0.32);
+
+  --adm-chart-1: #0f34ff;
+  --adm-chart-1-hover: #3655ff;
+  --adm-chart-grid: rgb(16 20 45 / 0.08);
+  --adm-chart-axis: rgb(16 20 45 / 0.25);
+}
+
+html[data-adm-theme="light"]:has(.adm-root) {
+  background: #f4f5f9;
+}

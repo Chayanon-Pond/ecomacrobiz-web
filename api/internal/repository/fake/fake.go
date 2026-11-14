@@ -30,6 +30,11 @@ type Store struct {
 	users      []domain.AdminUser
 	sessions   []domain.Session
 	media      []domain.Media
+	activities []domain.LeadActivity
+	tokens     []domain.UserToken
+	audit      []domain.AuditEntry
+	redirects  []domain.Redirect
+	touches    int
 	Now        func() time.Time
 }
 
@@ -136,6 +141,10 @@ func clonePost(p domain.Post) domain.Post {
 		c := *p.Cover
 		p.Cover = &c
 	}
+	if p.OGImage != nil {
+		c := *p.OGImage
+		p.OGImage = &c
+	}
 	return p
 }
 
@@ -183,16 +192,20 @@ func (r posts) AdminList(_ context.Context, f repository.AdminPostFilter) ([]dom
 		if p.deleted {
 			continue
 		}
-		if (f.Status == "draft" || f.Status == "published") && string(p.Status) != f.Status {
+		if domain.PostStatus(f.Status).Valid() && string(p.Status) != f.Status {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(p.Title), q) && !strings.Contains(p.Slug, q) {
+			continue
+		}
+		if f.CategorySlug != "" && !slices.Contains(p.CategorySlugs(), f.CategorySlug) {
 			continue
 		}
 		c := clonePost(p.Post)
 		c.BodyMarkdown = ""
 		out = append(out, c)
 	}
+	sortPosts(out, f.Sort)
 	return page(out, f.Page), len(out), nil
 }
 
@@ -231,21 +244,23 @@ func (r posts) resolve(p *domain.Post) {
 	p.Categories = refs
 }
 
-func (r posts) Create(_ context.Context, p *domain.Post, _ *string) error {
+func (r posts) Create(_ context.Context, p *domain.Post, createdBy *string, plan *repository.RedirectPlan) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.slugTaken(p.Slug, "") {
 		return domain.ErrConflict
 	}
 	now := r.Now().UTC()
+	p.CreatedBy = r.userRef(createdBy)
 	p.ID = uuid.NewString()
 	p.CreatedAt, p.UpdatedAt = now, now
 	r.resolve(p)
 	r.posts = append(r.posts, &postRow{Post: clonePost(*p)})
+	r.applyPlan(plan)
 	return nil
 }
 
-func (r posts) Update(_ context.Context, p *domain.Post) error {
+func (r posts) Update(_ context.Context, p *domain.Post, plan *repository.RedirectPlan) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.find(p.ID)
@@ -256,13 +271,15 @@ func (r posts) Update(_ context.Context, p *domain.Post) error {
 		return domain.ErrConflict
 	}
 	p.CreatedAt = row.CreatedAt
+	p.CreatedBy = row.CreatedBy
 	p.UpdatedAt = r.Now().UTC()
 	r.resolve(p)
 	row.Post = clonePost(*p)
+	r.applyPlan(plan)
 	return nil
 }
 
-func (r posts) SoftDelete(_ context.Context, id string) (domain.Post, error) {
+func (r posts) SoftDelete(_ context.Context, id string, plan *repository.RedirectPlan) (domain.Post, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.find(id)
@@ -270,6 +287,7 @@ func (r posts) SoftDelete(_ context.Context, id string) (domain.Post, error) {
 		return domain.Post{}, domain.ErrNotFound
 	}
 	row.deleted = true
+	r.applyPlan(plan)
 	return clonePost(row.Post), nil
 }
 
@@ -314,6 +332,9 @@ func (r leads) List(_ context.Context, f repository.LeadFilter) ([]domain.Lead, 
 	for i := len(r.leads) - 1; i >= 0; i-- {
 		l := r.leads[i]
 		if f.Status != "" && string(l.Status) != f.Status {
+			continue
+		}
+		if !leadMatches(l, f) {
 			continue
 		}
 		hay := strings.ToLower(strings.Join([]string{l.FirstName, l.LastName, l.Email, l.Phone, l.Company, l.LineID}, " "))
@@ -394,6 +415,9 @@ func (r users) Create(_ context.Context, u *domain.AdminUser) error {
 	u.ID = uuid.NewString()
 	u.Email = strings.ToLower(u.Email)
 	u.IsActive = true
+	if u.Role == "" {
+		u.Role = domain.RoleViewer
+	}
 	u.CreatedAt = r.Now().UTC()
 	r.users = append(r.users, *u)
 	return nil
@@ -412,7 +436,8 @@ func (r users) update(id string, fn func(*domain.AdminUser)) error {
 }
 
 func (r users) UpdatePassword(_ context.Context, id, hash string) error {
-	return r.update(id, func(u *domain.AdminUser) { u.PasswordHash = hash })
+	now := r.Now().UTC()
+	return r.update(id, func(u *domain.AdminUser) { u.PasswordHash, u.PasswordChangedAt = hash, &now })
 }
 
 func (r users) UpdateName(_ context.Context, id, name string) error {
@@ -490,6 +515,7 @@ func (r media) Create(_ context.Context, m *domain.Media) error {
 	m.ID = uuid.NewString()
 	m.CreatedAt = r.Now().UTC()
 	r.media = append(r.media, *m)
+	*m = r.fillMedia(*m)
 	return nil
 }
 
@@ -498,7 +524,7 @@ func (r media) Get(_ context.Context, id string) (domain.Media, error) {
 	defer r.mu.Unlock()
 	for _, m := range r.media {
 		if m.ID == id {
-			return m, nil
+			return r.fillMedia(m), nil
 		}
 	}
 	return domain.Media{}, domain.ErrNotFound

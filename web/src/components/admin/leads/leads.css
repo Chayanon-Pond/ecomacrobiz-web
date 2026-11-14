@@ -1,0 +1,113 @@
+/* Leads: kanban board. */
+@layer components {
+
+.adm-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(16.5rem, 1fr);
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+  scroll-snap-type: x proximity;
+  align-items: start;
+}
+@media (max-width: 639px) {
+  .adm-board {
+    grid-auto-columns: 82vw;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    scroll-padding-inline: 1rem;
+  }
+}
+.adm-board-col {
+  scroll-snap-align: start;
+  min-width: 0;
+  border-radius: var(--adm-radius-lg);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.adm-board-col[data-over] {
+  border-color: var(--adm-accent-border);
+  background: var(--adm-accent-bg);
+}
+.adm-board-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.25rem;
+}
+.adm-board-list {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0 0.5rem 0.6rem;
+  min-height: 6rem;
+  max-height: calc(100dvh - 17rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.adm-board-empty {
+  display: grid;
+  place-items: center;
+  min-height: 5rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.adm-board-card {
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.6rem 0.6rem 0.65rem;
+  box-shadow: var(--adm-elev-1);
+  touch-action: manipulation;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+.adm-board-card:hover {
+  border-color: var(--line-strong);
+}
+.adm-board-card-overlay {
+  cursor: grabbing;
+  box-shadow: var(--adm-elev-2);
+  border-color: var(--adm-accent-border);
+  transform: rotate(1.5deg);
+}
+.adm-board-grip {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.75rem;
+  margin: -0.1rem 0 0 -0.2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--subtle);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.adm-board-grip:hover {
+  color: var(--fg);
+  background: var(--adm-hover);
+}
+.adm-board-title {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.adm-board-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+}

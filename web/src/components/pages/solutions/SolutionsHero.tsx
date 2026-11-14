@@ -64,7 +64,9 @@ export function SolutionsHero() {
             src={image.src}
             alt={image.alt}
             fill
-            loading="eager"
+            // Above-the-fold LCP candidate: preload in <head> with high priority.
+            preload
+            fetchPriority="high"
             sizes="100vw"
             className="object-cover object-center will-change-transform"
           />

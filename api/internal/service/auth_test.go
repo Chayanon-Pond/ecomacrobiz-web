@@ -52,7 +52,7 @@ func TestLoginAndAuthenticate(t *testing.T) {
 	if _, _, err := svc.Authenticate(ctx, res.Token+"x"); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("tampered token: %v", err)
 	}
-	if err := svc.Logout(ctx, res.Token); err != nil {
+	if err := svc.Logout(ctx, res.Token, domain.Actor{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := svc.Authenticate(ctx, res.Token); !errors.Is(err, domain.ErrUnauthorized) {

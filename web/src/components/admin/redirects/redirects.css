@@ -1,0 +1,67 @@
+.rd-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.rd-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--ff-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8125rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+.rd-path svg {
+  color: var(--subtle);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.rd-path:hover {
+  color: var(--adm-accent-text);
+}
+.rd-path:hover svg,
+.rd-path:focus-visible svg {
+  opacity: 1;
+}
+.rd-path:focus-visible {
+  outline: 2px solid var(--adm-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.rd-table td {
+  vertical-align: middle;
+}
+.rd-cards {
+  display: none;
+}
+@media (max-width: 767px) {
+  .rd-table {
+    display: none;
+  }
+  .rd-cards {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .rd-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--adm-radius);
+    background: var(--surface);
+  }
+  .rd-path svg {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-path svg {
+    transition: none;
+  }
+}

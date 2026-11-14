@@ -1,5 +1,5 @@
 /**
- * Site-wide content: brand, navigation, contact and social links.
+ * Site-wide content: brand, navigation, contact, office NAP and social links.
  * Single source of truth — components must not hardcode these values.
  */
 
@@ -33,6 +33,44 @@ export const site = {
   contact: {
     phoneDisplay: "064-926-9968",
     phoneE164: "+66649269968",
+  },
+} as const;
+
+const addressEn =
+  "1 Empire Tower Building, 47th Floor, Unit 4703, South Sathorn Road, Yannawa Sub-District, Sathorn District, Bangkok 10120";
+
+/**
+ * Office NAP (name, address, phone) + opening hours, supplied by the boss
+ * 2026-11-14. Single source for the footer, /contact, /privacy and JSON-LD:
+ * never retype these values elsewhere.
+ * TODO(geo): latitude/longitude not supplied — the boss can provide them for
+ * JSON-LD `geo` (GeoCoordinates). No holiday hours either.
+ */
+export const office = {
+  name: site.legalName,
+  phoneDisplay: site.contact.phoneDisplay,
+  phoneE164: site.contact.phoneE164,
+  addressTh:
+    "เลขที่ 1 อาคารเอ็มไพร์ ทาวเวอร์ ชั้นที่ 47 ยูนิต 4703 ถนนสาทรใต้ แขวงยานนาวา เขตสาทร กรุงเทพมหานคร 10120",
+  addressEn,
+  postal: {
+    streetAddress: "1 Empire Tower Building, 47th Floor, Unit 4703, South Sathorn Road",
+    /** Sub-locality (แขวงยานนาวา); schema.org PostalAddress has no field for it. */
+    subLocality: "Yannawa",
+    addressLocality: "Sathorn",
+    addressRegion: "Bangkok",
+    postalCode: "10120",
+    addressCountry: "TH",
+  },
+  /** Maps search for the English address (no embed, no API key). */
+  mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressEn)}`,
+  hours: {
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    opens: "10:00",
+    closes: "18:00",
+    timeZone: "Asia/Bangkok",
+    labelTh: "จันทร์–ศุกร์ 10:00–18:00 น.",
+    labelEn: "Monday–Friday 10:00–18:00 (closed Saturday–Sunday)",
   },
 } as const;
 

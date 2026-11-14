@@ -3,6 +3,7 @@
  * 301-redirects here). Same cached data layer as the pages, so it is
  * invalidated by revalidateTag("posts").
  */
+import { cacheTag } from "next/cache";
 import { getPostsPage } from "@/lib/posts";
 import { absUrl } from "@/lib/seo/jsonld";
 import { site } from "@/content/site";
@@ -18,6 +19,7 @@ function esc(s: string): string {
 
 async function buildFeed(): Promise<string> {
   "use cache";
+  cacheTag("posts");
   const { posts } = await getPostsPage({ page: 1 });
   const items = posts
     .map((p) => {

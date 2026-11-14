@@ -53,9 +53,9 @@ func TestExportCSV(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	svc := NewLeadService(store.LeadsRepo(), discard)
+	svc := NewLeadService(store.LeadsRepo(), NopAuditor{}, discard)
 	var buf bytes.Buffer
-	if err := svc.ExportCSV(ctx, &buf, ""); err != nil {
+	if err := svc.ExportCSV(ctx, &buf, "", testOwner); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.Bytes()
@@ -81,14 +81,14 @@ func TestExportCSV(t *testing.T) {
 	}
 
 	buf.Reset()
-	if err := svc.ExportCSV(ctx, &buf, "spam"); err != nil {
+	if err := svc.ExportCSV(ctx, &buf, "spam", testOwner); err != nil {
 		t.Fatal(err)
 	}
 	recs, _ = csv.NewReader(bytes.NewReader(buf.Bytes()[3:])).ReadAll()
 	if len(recs) != 2 {
 		t.Errorf("status filter: %d rows", len(recs)-1)
 	}
-	if err := svc.ExportCSV(ctx, io.Discard, "bogus"); err == nil {
+	if err := svc.ExportCSV(ctx, io.Discard, "bogus", testOwner); err == nil {
 		t.Error("invalid status accepted")
 	}
 }
@@ -98,20 +98,20 @@ func TestLeadUpdate(t *testing.T) {
 	ctx := context.Background()
 	l := domain.Lead{FirstName: "A", Phone: "0812345678", Email: "a@b.co", PreferredChannel: domain.ChannelPhone}
 	_ = store.LeadsRepo().Create(ctx, &l)
-	svc := NewLeadService(store.LeadsRepo(), discard)
+	svc := NewLeadService(store.LeadsRepo(), NopAuditor{}, discard)
 	note := "โทรกลับแล้ว"
-	got, err := svc.Update(ctx, l.ID, LeadUpdate{Status: "contacted", Note: &note}, "")
+	got, err := svc.Update(ctx, l.ID, LeadUpdate{Status: "contacted", Note: &note}, testOwner)
 	if err != nil || got.Status != domain.LeadContacted || got.Note != note {
 		t.Fatalf("update: %+v %v", got, err)
 	}
-	got, err = svc.Update(ctx, l.ID, LeadUpdate{Status: "qualified"}, "")
+	got, err = svc.Update(ctx, l.ID, LeadUpdate{Status: "qualified"}, testOwner)
 	if err != nil || got.Note != note {
 		t.Fatalf("absent note must be kept: %+v %v", got, err)
 	}
-	if _, err := svc.Update(ctx, l.ID, LeadUpdate{Status: "won"}, ""); fieldErrs(t, err)["status"] == "" {
+	if _, err := svc.Update(ctx, l.ID, LeadUpdate{Status: "won"}, testOwner); fieldErrs(t, err)["status"] == "" {
 		t.Error("invalid status accepted")
 	}
-	if _, err := svc.Update(ctx, "nope", LeadUpdate{Status: "new"}, ""); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := svc.Update(ctx, "nope", LeadUpdate{Status: "new"}, testOwner); !errors.Is(err, domain.ErrNotFound) {
 		t.Error("bad id")
 	}
 	if _, _, err := svc.List(ctx, repository.LeadFilter{Page: domain.Page{Page: 1, PerPage: 10}, Status: "x"}); err == nil {
@@ -162,10 +162,10 @@ func TestMediaUpload(t *testing.T) {
 	ctx := context.Background()
 	store := fake.New()
 	ms := &memStore{files: map[string][]byte{}}
-	svc := NewMediaService(store.MediaRepo(), ms, 1<<20, discard)
+	svc := NewMediaService(store.MediaRepo(), ms, 1<<20, 0, NopAuditor{}, discard)
 
 	for _, kind := range []string{"png", "jpeg", "gif"} {
-		m, err := svc.Upload(ctx, bytes.NewReader(encode(t, kind)), "../../etc/รูป."+kind, "u1")
+		m, err := svc.Upload(ctx, bytes.NewReader(encode(t, kind)), "../../etc/รูป."+kind, "", testOwner)
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
@@ -176,7 +176,7 @@ func TestMediaUpload(t *testing.T) {
 			t.Errorf("name not sanitised: %+v", m)
 		}
 	}
-	m, err := svc.Upload(ctx, bytes.NewReader(fakeAVIF()), "a.avif", "")
+	m, err := svc.Upload(ctx, bytes.NewReader(fakeAVIF()), "a.avif", "", testOwner)
 	if err != nil || m.Mime != "image/avif" || m.Width != 640 || m.Height != 480 {
 		t.Fatalf("avif: %+v %v", m, err)
 	}
@@ -187,12 +187,12 @@ func TestMediaUpload(t *testing.T) {
 		"empty": {},
 		"trunc": encode(t, "png")[:20],
 	} {
-		if _, err := svc.Upload(ctx, bytes.NewReader(data), name, ""); fieldErrs(t, err)["file"] == "" {
+		if _, err := svc.Upload(ctx, bytes.NewReader(data), name, "", testOwner); fieldErrs(t, err)["file"] == "" {
 			t.Errorf("%s accepted: %v", name, err)
 		}
 	}
-	small := NewMediaService(store.MediaRepo(), ms, 10, discard)
-	if _, err := small.Upload(ctx, bytes.NewReader(encode(t, "png")), "x.png", ""); !errors.Is(err, domain.ErrTooLarge) {
+	small := NewMediaService(store.MediaRepo(), ms, 10, 0, NopAuditor{}, discard)
+	if _, err := small.Upload(ctx, bytes.NewReader(encode(t, "png")), "x.png", "", testOwner); !errors.Is(err, domain.ErrTooLarge) {
 		t.Errorf("too large: %v", err)
 	}
 }

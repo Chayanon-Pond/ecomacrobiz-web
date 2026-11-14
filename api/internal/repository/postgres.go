@@ -28,6 +28,9 @@ type Store struct {
 	AdminUsers *PGAdminUsers
 	Sessions   *PGSessions
 	Media      *PGMedia
+	Tokens     *PGUserTokens
+	Audit      *PGAuditLogs
+	Redirects  *PGRedirects
 }
 
 func NewStore(db DB) *Store {
@@ -38,6 +41,9 @@ func NewStore(db DB) *Store {
 		AdminUsers: &PGAdminUsers{db: db},
 		Sessions:   &PGSessions{db: db},
 		Media:      &PGMedia{db: db},
+		Tokens:     &PGUserTokens{db: db},
+		Audit:      &PGAuditLogs{db: db},
+		Redirects:  &PGRedirects{db: db},
 	}
 }
 

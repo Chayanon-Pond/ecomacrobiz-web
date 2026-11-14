@@ -61,6 +61,19 @@ type env struct {
 	rv    *recRev
 	cfg   *config.Config
 	db    *pinger
+	mail  *recMail
+}
+
+type recMail struct {
+	mu   sync.Mutex
+	sent []string // recipients
+}
+
+func (m *recMail) Send(to, _, _ string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sent = append(m.sent, to)
+	return true
 }
 
 func newEnv(t *testing.T) *env {
@@ -69,6 +82,7 @@ func newEnv(t *testing.T) *env {
 		return map[string]string{
 			"CORS_ALLOWED_ORIGINS": webOrigin, "TRUSTED_PROXIES": proxyIP, "COOKIE_SECURE": "true",
 			"PUBLIC_BASE_URL": "http://api.test", "CONTACT_RATE_LIMIT": "3/10m", "LOGIN_RATE_LIMIT": "4/15m",
+			"WEB_BASE_URL": "https://www.example.test",
 		}[k]
 	})
 	if err != nil {
@@ -81,26 +95,38 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = disk.Close() })
+	audit := service.NewAuditService(store.AuditRepo(), discard)
 	auth := service.NewAuthService(store.AdminUsersRepo(), store.SessionsRepo(), time.Hour, bcrypt.MinCost, discard)
+	auth.SetAuditor(audit)
 	if _, err := auth.EnsureAdmin(context.Background(), adminEmail, adminPass, "Admin", false); err != nil {
 		t.Fatal(err)
 	}
+	mail := &recMail{}
 	db := &pinger{}
+	redirects := service.NewRedirectService(store.RedirectsRepo(), store.PostsRepo(), rv, audit, discard)
+	redirects.SetSiteBaseURL(cfg.WebBaseURL)
 	r, err := NewRouter(Deps{
 		Config: cfg, Log: discard, DB: db,
-		Posts:   service.NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), rv, discard),
-		Contact: service.NewContactService(store.LeadsRepo(), nil, discard),
-		Auth:    auth, Leads: service.NewLeadService(store.LeadsRepo(), discard),
-		Media:             service.NewMediaService(store.MediaRepo(), disk, 1<<20, discard),
+		Posts:     service.NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), redirects, rv, audit, discard),
+		Redirects: redirects,
+		Contact:   service.NewContactService(store.LeadsRepo(), nil, discard),
+		Auth:      auth, Leads: service.NewLeadService(store.LeadsRepo(), audit, discard),
+		Media:             service.NewMediaService(store.MediaRepo(), disk, 1<<20, 0, audit, discard),
 		MediaFiles:        disk,
 		ContactLimiter:    ratelimit.New(cfg.ContactRateLimit.Events, cfg.ContactRateLimit.Per),
 		LoginIPLimiter:    ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per),
 		LoginEmailLimiter: ratelimit.New(cfg.LoginRateLimit.Events, cfg.LoginRateLimit.Per),
+		TokenLimiter:      ratelimit.New(20, 10*time.Minute),
+		PasswordLimiter:   ratelimit.New(5, 15*time.Minute),
+		Users: service.NewUserService(store.AdminUsersRepo(), store.SessionsRepo(), store.TokensRepo(), auth, audit, mail,
+			service.UserServiceConfig{InviteTTL: cfg.InviteTTL, WebBaseURL: cfg.WebBaseURL}, discard),
+		Account: service.NewAccountService(store.AdminUsersRepo(), store.SessionsRepo(), auth, audit, discard),
+		Audit:   audit,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, r: r, store: store, rv: rv, cfg: cfg, db: db}
+	return &env{t: t, r: r, store: store, rv: rv, cfg: cfg, db: db, mail: mail}
 }
 
 type reqOpt func(*http.Request)
@@ -236,7 +262,9 @@ func TestCORS(t *testing.T) {
 
 func seedPosts(t *testing.T, e *env) {
 	t.Helper()
-	svc := service.NewPostService(e.store.PostsRepo(), e.store.CategoriesRepo(), e.store.MediaRepo(), e.rv, discard)
+	svc := service.NewPostService(e.store.PostsRepo(), e.store.CategoriesRepo(), e.store.MediaRepo(),
+		service.NewRedirectService(e.store.RedirectsRepo(), e.store.PostsRepo(), e.rv, service.NopAuditor{}, discard), e.rv,
+		service.NopAuditor{}, discard)
 	legacy := []string{"แบรนด์ดิ้ง-กับ-การตลาด"}
 	for i, slug := range []string{"one", "two", "three"} {
 		in := service.PostInput{Slug: slug, Title: "บทความ " + slug, BodyMarkdown: "เนื้อหา", Status: "published",
@@ -248,11 +276,11 @@ func seedPosts(t *testing.T, e *env) {
 		}
 		pt := time.Now().Add(-time.Duration(3-i) * time.Hour)
 		in.PublishedAt = &pt
-		if _, err := svc.Create(context.Background(), in, ""); err != nil {
+		if _, err := svc.Create(context.Background(), in, seedActor); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := svc.Create(context.Background(), service.PostInput{Slug: "draft", Title: "ร่าง", Status: "draft"}, ""); err != nil {
+	if _, err := svc.Create(context.Background(), service.PostInput{Slug: "draft", Title: "ร่าง", Status: "draft"}, seedActor); err != nil {
 		t.Fatal(err)
 	}
 }

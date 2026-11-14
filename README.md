@@ -161,11 +161,68 @@ public/images/{gallery,purpose,solutions,knowledge/<slug>}/   WebP re-encoded fr
 | `/post/:slug` (any other) | `/knowledge/:slug` |
 | `/blog/:path*` (tags, hashtags, …) | `/knowledge` |
 
-## Admin
+## Admin (v2)
 
-`/admin` (noindex, disallowed in robots, excluded from sitemap). Log in with the
-`ADMIN_EMAIL` / `ADMIN_PASSWORD` bootstrapped by the API on boot (password is
-never overwritten unless `ADMIN_RESET_PASSWORD=true`). Posts: Markdown editor
-with preview, cover + inline image upload, draft/published, SEO fields.
-Publishing revalidates `/knowledge` immediately. Leads: filter, search, status +
-note, CSV export (UTF-8 BOM for Excel/Thai).
+`/admin` — noindex, disallowed in robots, excluded from the sitemap. Thai-first, dark by default (light toggle),
+responsive (bottom-safe drawer sidebar on phones), Cmd/Ctrl+K command palette.
+
+**Access control.** `web/src/proxy.ts` redirects `/admin/*` (except `/admin/login`, `/admin/invite`) to
+`/admin/login?next=…` when the `escoma_admin` cookie is missing (optimistic only). The console layout
+(`app/admin/(console)/layout.tsx`) verifies the session server-side with `GET /auth/me` before any console UI
+renders. The **Go API is the real gate**: every admin route carries a permission (`middleware.RequirePerm`), proven by
+`api/internal/http/handlers/rbac_matrix_test.go`. UI hiding is cosmetic.
+
+| Role | Can |
+| --- | --- |
+| owner (เจ้าของระบบ) | everything incl. users, invites, audit log, settings |
+| editor (บรรณาธิการ) | posts (write + publish/schedule), media, redirects |
+| sales (ฝ่ายขาย) | leads: view, status/notes/assign, CSV export |
+| viewer (ผู้ชม) | read-only posts, media, leads (no export) |
+
+Full permission matrix + endpoints: `api/README.md`. At least one active owner always exists (last-owner
+protection); the bootstrap admin (`ADMIN_EMAIL`) is an owner, and `ADMIN_RESET_PASSWORD=true` is the break-glass
+(restores password, owner role and active state).
+
+**Pages.** Dashboard (lead KPIs with period deltas, 30-day chart, posts counts, recent items) · Posts (search,
+filters, bulk publish/unpublish/delete) · Editor (Tiptap block editor — **storage stays Markdown** in
+`body_markdown`, round-trip verified on all seeded posts with `npm run verify:roundtrip`; slash menu, bubble toolbar,
+image drag-drop/paste upload, live preview with the real public article components, draft autosave, scheduling,
+SEO checklist/score with focus keyword, Google + Facebook/LINE/X previews, canonical/noindex/OG overrides) ·
+Media library (EXIF-stripped, auto-oriented, ≤2560 px re-encoded uploads; alt text; usage; delete blocked when in
+use) · Leads (table + Kanban with keyboard alternative, detail drawer with timeline, notes, assignee, quick
+actions, CSV export) · Redirects (301/410 manager, no chains/loops) · Users & invites (invite link always shown
+for copying because e-mail may not be configured) · Account (profile, password, sessions) · Audit log · Settings
+overview (read-only, no secrets).
+
+**Scheduled posts.** The API scheduler (every `SCHEDULER_INTERVAL`, default 60 s) publishes due posts with an
+idempotent `UPDATE … WHERE status='scheduled' AND published_at <= now() RETURNING`, then revalidates the web.
+
+**Knowledge fallback policy.** The Go API is the source of truth as soon as it reports ≥ 1 published post: lists,
+categories, homepage teasers, sitemap and RSS show API data only, an API 404 is a real 404, and 301/410 come from
+`/api/v1/redirects` (served by `proxy.ts`, cached in-process 60 s, invalidated by the `redirects` revalidate tag,
+fails open). Only when the API is reachable with **zero** published posts does the web serve the bundled
+`posts.json` (list, categories, articles). API unset/down ⇒ bundle with a short cache lifetime. Homepage teasers
+are checked against live posts, so they never link to a 404. Tests: `cd web && npm run test`.
+
+**SEO.** Slug changes on published posts keep the old URL as a 301; unpublish/delete offers a 301 target or 410
+Gone; BlogPosting/BreadcrumbList/Organization/WebSite/ProfessionalService JSON-LD; auto OG image
+(`/knowledge/<slug>/og`, bundled IBM Plex Sans Thai in `web/assets/fonts`); optional IndexNow (`INDEXNOW_KEY`).
+Writer's guide (Thai): `docs/SEO-GUIDE.md`.
+
+**Status.** Complete on `Develop` (commits `603edae..HEAD`, not pushed/deployed): migrations `00003_admin_v2` +
+`00004_seo`, RBAC + users/invites/audit, scheduler, media processing, leads CRM, Tiptap editor, SEO/redirects/410,
+public JSON-LD/OG/sitemap. Verified locally with `go test`, web `tsc`/`lint`/`test`/`build`, and one end-to-end
+run on a throwaway DB against the production web build (logged-out `/admin*` → 307 from `proxy.ts`; owner login;
+draft + drag-drop image + cover/alt + SEO fields; schedule → published by the scheduler → on `/knowledge`,
+category, sitemap, RSS, article 200 with SEO title/canonical/BlogPosting JSON-LD; unpublish (410) → 410 and gone
+from listings; delete) and a crawl of all sitemap + nav/footer URLs (no broken links, no duplicate titles or
+descriptions, exactly one `<h1>` per page).
+
+**Known gaps.**
+- Mobile Lighthouse Performance measured 85–87 locally vs the 90 target — re-measure with PageSpeed Insights after
+  deploy (DEPLOY.md step 4). Public JS bundle is +0.4 KB gz after the Admin v2 / SEO work.
+- `/knowledge/category/<unknown>` answers 200 + `noindex` (soft 404) instead of 404.
+- JPEG re-encode drops the embedded ICC colour profile (wide-gamut photos may shift slightly); GIF and AVIF uploads
+  are stored as-is (not resized or metadata-stripped).
+- Audit logs are kept forever (no retention job).
+- Invite/reset e-mail (Resend/SMTP) and IndexNow submission are implemented but untested against the live services.

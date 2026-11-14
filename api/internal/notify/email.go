@@ -53,7 +53,7 @@ func (e *Email) NotifyLead(ctx context.Context, lead domain.Lead) error {
 	if err != nil {
 		return err
 	}
-	return e.send(ctx, msg)
+	return e.send(ctx, e.cfg.To, msg)
 }
 
 // BuildMessage renders an RFC 5322 UTF-8 message with base64 body; header
@@ -88,7 +88,7 @@ func BuildMessage(from string, to []string, replyTo, subject, body string, now t
 	return b.Bytes(), nil
 }
 
-func (e *Email) send(ctx context.Context, msg []byte) error {
+func (e *Email) send(ctx context.Context, to []string, msg []byte) error {
 	addr := net.JoinHostPort(e.cfg.Host, strconv.Itoa(e.cfg.Port))
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	var conn net.Conn
@@ -128,10 +128,10 @@ func (e *Email) send(ctx context.Context, msg []byte) error {
 	if err := c.Mail(from.Address); err != nil {
 		return fmt.Errorf("smtp MAIL FROM: %w", err)
 	}
-	for _, rcpt := range e.cfg.To {
+	for _, rcpt := range to {
 		a, err := mail.ParseAddress(rcpt)
 		if err != nil {
-			return fmt.Errorf("invalid SMTP_TO %q: %w", rcpt, err)
+			return fmt.Errorf("invalid recipient %q: %w", rcpt, err)
 		}
 		if err := c.Rcpt(a.Address); err != nil {
 			return fmt.Errorf("smtp RCPT TO: %w", err)

@@ -3,11 +3,13 @@
  *
  * DRAFT — NOT YET LEGALLY REVIEWED. Placeholder text written for the
  * contact-form launch. The page is `noindex` until legal approves
- * (see app/(site)/privacy/page.tsx). Open points for legal review:
- * registered address + company registration no. of the data controller,
- * a dedicated privacy e-mail / DPO, the retention period, the exact
+ * (see app/(site)/privacy/page.tsx). Controller address = the office address
+ * (content/site.ts `office`). Open points for legal review: company
+ * registration no. of the data controller, a dedicated privacy e-mail / DPO, the retention period, the exact
  * notification and hosting providers and their countries, effective date.
  */
+import { office } from "@/content/site";
+
 export const privacyPage = {
   path: "/privacy",
   title: "Privacy Policy",
@@ -23,7 +25,7 @@ export const privacyMarkdown = `ECOMACROBIZ CO., LTD. ("บริษัท" ห�
 
 ## 1. ผู้ควบคุมข้อมูลส่วนบุคคล
 
-ECOMACROBIZ CO., LTD. เป็นผู้ควบคุมข้อมูลส่วนบุคคลสำหรับข้อมูลที่เก็บรวบรวมผ่านเว็บไซต์นี้ คุณติดต่อเราเรื่องข้อมูลส่วนบุคคลได้ตามช่องทางในข้อ 9
+${office.name} ที่อยู่ ${office.addressTh} เป็นผู้ควบคุมข้อมูลส่วนบุคคลสำหรับข้อมูลที่เก็บรวบรวมผ่านเว็บไซต์นี้ คุณติดต่อเราเรื่องข้อมูลส่วนบุคคลได้ตามช่องทางในข้อ 9
 
 ## 2. ข้อมูลที่เราเก็บรวบรวม
 
@@ -89,7 +91,8 @@ ECOMACROBIZ CO., LTD. เป็นผู้ควบคุมข้อมูล�
 
 หากมีคำถามเกี่ยวกับนโยบายนี้ หรือต้องการใช้สิทธิของคุณ ติดต่อ ECOMACROBIZ CO., LTD. ได้ที่
 
-- โทรศัพท์ [064-926-9968](tel:+66649269968)
+- ที่อยู่ ${office.addressTh}
+- โทรศัพท์ [${office.phoneDisplay}](tel:${office.phoneE164})
 - LINE Official [lin.ee/sATHhgar](https://lin.ee/sATHhgar)
 - แบบฟอร์มในหน้า [ติดต่อเรา](/contact)
 

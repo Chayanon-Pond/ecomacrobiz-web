@@ -3,8 +3,10 @@ import { site } from "@/content/site";
 import { getAllPostSlugs, getCategories, getPost } from "@/lib/posts";
 
 /**
- * Public pages + every published post + every non-empty category.
- * Excludes /admin, /api and /privacy (noindex until legal approval).
+ * Public pages + every published (indexable) post + every non-empty category.
+ * Excludes /admin, /api, /privacy (noindex until legal approval) and posts
+ * flagged noindex or whose canonical_url points elsewhere. lastModified = updated_at.
+ * Built only from cached readers (tag `posts`), so post changes revalidate it.
  */
 const staticPages: { path: string; priority: number; changeFrequency: "weekly" | "monthly" }[] = [
   { path: "/", priority: 1, changeFrequency: "monthly" },
@@ -23,7 +25,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const posts = (await Promise.all(slugs.map((s) => getPost(s))))
     .filter((p): p is NonNullable<typeof p> => p !== null)
     // getAllPostSlugs also returns legacy slugs; keep canonical entries once.
-    .filter((p, i, all) => all.findIndex((q) => q.slug === p.slug) === i);
+    .filter((p, i, all) => all.findIndex((q) => q.slug === p.slug) === i)
+    // noindex posts and posts canonicalised elsewhere do not belong in the sitemap.
+    .filter((p) => !p.noindex && (!p.canonicalUrl || p.canonicalUrl === `${base}/knowledge/${p.slug}`));
 
   const latest = posts.reduce<string | undefined>(
     (acc, p) => (!acc || p.updatedAt > acc ? p.updatedAt : acc),

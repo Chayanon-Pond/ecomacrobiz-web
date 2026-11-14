@@ -1,0 +1,390 @@
+/* Admin console chrome: sidebar, top bar, command palette. */
+@layer components {
+
+.adm-shell {
+  display: grid;
+  grid-template-columns: var(--adm-sidebar-w) minmax(0, 1fr);
+  min-height: 100dvh;
+  transition: grid-template-columns 0.2s var(--adm-ease);
+}
+html[data-adm-sidebar="collapsed"] .adm-shell {
+  grid-template-columns: var(--adm-sidebar-w-collapsed) minmax(0, 1fr);
+}
+
+.adm-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--adm-sidebar-bg);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.adm-sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: var(--adm-topbar-h);
+  padding: 0 1.05rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.adm-sb-brand-text {
+  font-family: var(--ff-display), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+}
+.adm-sb-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.75rem 0.65rem;
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+.adm-sb-group {
+  display: grid;
+  gap: 0.15rem;
+}
+.adm-sb-group-label {
+  padding: 0 0.6rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--subtle);
+  white-space: nowrap;
+}
+.adm-sb-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 2.375rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.6rem;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.15s, color 0.15s;
+}
+.adm-sb-link svg {
+  flex-shrink: 0;
+}
+.adm-sb-link:hover {
+  color: var(--fg);
+  background: var(--adm-hover);
+}
+.adm-sb-link[aria-current="page"] {
+  color: var(--fg);
+  background: var(--adm-accent-bg);
+}
+.adm-sb-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -0.65rem;
+  top: 0.45rem;
+  bottom: 0.45rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.adm-sb-link[aria-current="page"] svg {
+  color: var(--adm-accent-text);
+}
+.adm-sb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.adm-sb-foot {
+  padding: 0.6rem 0.65rem 0.8rem;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.15rem;
+}
+
+/* collapsed rail */
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-label,
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-brand-text,
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-group-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-link {
+  justify-content: center;
+  padding-inline: 0;
+}
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-brand {
+  justify-content: center;
+  padding: 0;
+}
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-group + .adm-sb-group {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+.adm-sidebar .adm-tip {
+  display: flex;
+}
+html:not([data-adm-sidebar="collapsed"]) .adm-sidebar .adm-tip-bubble,
+.adm-drawer .adm-tip-bubble {
+  display: none;
+}
+html[data-adm-sidebar="collapsed"] .adm-sidebar .adm-sb-nav {
+  overflow: visible;
+}
+html[data-adm-sidebar="collapsed"] .adm-sidebar {
+  overflow: visible;
+}
+
+/* mobile drawer variant: always expanded */
+.adm-drawer .adm-sidebar-inner .adm-sb-label,
+.adm-drawer .adm-sidebar-inner .adm-sb-group-label {
+  position: static;
+  width: auto;
+  height: auto;
+  clip: auto;
+}
+
+/* main column */
+.adm-main-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.adm-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--adm-topbar-h);
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+.adm-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.adm-crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.adm-crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+.adm-crumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.adm-crumbs a:hover {
+  color: var(--fg);
+}
+.adm-crumbs [aria-current="page"] {
+  color: var(--fg);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.adm-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.25rem;
+  padding: 0 0.5rem 0 0.7rem;
+  min-width: 15rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--subtle);
+  font: inherit;
+  font-size: 0.8125rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+.adm-search-btn:hover {
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--line-strong) 50%, var(--fg) 25%);
+}
+.adm-search-btn .adm-kbd {
+  margin-left: auto;
+}
+.adm-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 2.5rem;
+  padding: 0 0.4rem 0 0.3rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  max-width: 16rem;
+}
+.adm-user-btn:hover,
+.adm-user-btn[aria-expanded="true"] {
+  background: var(--adm-hover);
+  border-color: var(--line);
+}
+.adm-main {
+  flex: 1;
+  width: 100%;
+  max-width: 90rem;
+  margin-inline: auto;
+  padding: 1.5rem 1rem 3rem;
+}
+@media (min-width: 768px) {
+  .adm-main {
+    padding: 1.75rem 1.75rem 3.5rem;
+  }
+  .adm-topbar {
+    padding: 0 1.25rem;
+  }
+}
+@media (min-width: 1440px) {
+  .adm-main {
+    padding-inline: 2.5rem;
+  }
+}
+@media (max-width: 1023px) {
+  .adm-shell,
+  html[data-adm-sidebar="collapsed"] .adm-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-shell > .adm-sidebar {
+    display: none;
+  }
+}
+
+/* command palette */
+.adm-cmdk {
+  width: min(38rem, calc(100vw - 1.5rem));
+  margin: 12vh auto auto;
+  padding: 0;
+  border-radius: 1rem;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--adm-elev-2);
+  overflow: hidden;
+}
+.adm-cmdk[open] {
+  animation: adm-pop 0.16s var(--adm-ease);
+}
+.adm-cmdk::backdrop {
+  background: var(--adm-overlay);
+  backdrop-filter: blur(2px);
+}
+.adm-cmdk-input {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.adm-cmdk-input input {
+  flex: 1;
+  height: 3.25rem;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.975rem;
+}
+/* The open palette is the focus context; a ring on its only input just clips against the dialog edge. */
+.adm-cmdk-input input:focus-visible {
+  outline: none;
+}
+.adm-cmdk-input input::placeholder {
+  color: var(--subtle);
+}
+.adm-cmdk-list {
+  max-height: min(24rem, 60dvh);
+  overflow-y: auto;
+  padding: 0.4rem;
+  overscroll-behavior: contain;
+}
+.adm-cmdk-group {
+  padding: 0.5rem 0.65rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--subtle);
+  letter-spacing: 0.04em;
+}
+.adm-cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.6rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.adm-cmdk-item svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.adm-cmdk-item[aria-selected="true"] {
+  background: var(--adm-accent-bg);
+}
+.adm-cmdk-item[aria-selected="true"] svg {
+  color: var(--adm-accent-text);
+}
+.adm-cmdk-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.adm-cmdk-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--subtle);
+}
+.adm-cmdk-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* full-page states (session check) */
+.adm-fullpage {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 1.5rem;
+}
+}
