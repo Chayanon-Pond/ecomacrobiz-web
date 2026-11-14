@@ -10,6 +10,7 @@
 > 6. **Cloudflare**: เพิ่มโดเมน → สร้าง DNS record ให้ครบตาม `docs/dns-snapshot-2026-11-12.txt` (MX/TXT/CNAME/SRV ของ Microsoft 365 เป็น **DNS only สีเทา**) → ชี้ `@`, `www`, `api` ไป Railway → SSL **Full** → เปลี่ยน nameserver ที่ Wix → ทดสอบส่ง/รับอีเมล
 > 7. **ห้ามยกเลิก** Wix plan / โดเมน จนกว่าระบบใหม่เสถียร ≥ 30 วัน (โดเมนยังจดทะเบียนกับ Wix ต้องต่ออายุที่ Wix)
 > 8. Railway **Hobby บล็อก SMTP** → ใช้ `RESEND_API_KEY` (Resend) หรืออัปเกรดเป็น Pro ถ้าจะใช้ SMTP ของ Microsoft 365
+> 9. **ระบบสมาชิก/คอมเมนต์ (community)**: สร้างกุญแจ `MEMBER_DATA_KEY` + `MEMBER_INDEX_KEY` (ข้อ 2.6 — **บังคับใน production, ห้ามทำหาย/ห้ามเปลี่ยน INDEX key**) → ถ้าจะเปิด "เข้าสู่ระบบด้วย Google" ให้ทำ Google Cloud Console ตามข้อ 2.9 แล้วใส่ `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` + `WEB_BASE_URL` ใน service `api` (ไม่ใส่ = ปิด Google แต่สมัครด้วยอีเมลได้ปกติ)
 
 Facts this runbook is based on (verified 2026-11-12):
 
@@ -170,6 +171,29 @@ the old binary still serves the DB after `down`). Rollback = redeploy the previo
 `server migrate down` (twice) if you must also roll the schema back — that drops audit logs, lead timelines,
 invites and redirects created since. Take a Railway Postgres backup before deploying.
 
+Community — members, Google sign-in, comments (migration `00005_members`):
+
+| Name | Value | Secret? | Notes |
+| --- | --- | --- | --- |
+| `MEMBER_DATA_KEY` | base64 of 32 random bytes | **yes** | **required in production** (boot fails without it). Encrypts member e-mails and token payloads (AES-256-GCM). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Store it in the password manager — losing it makes every member e-mail unreadable. Rotation: `2:<new>,1:<old>` (first = used for new rows, all listed keys decrypt) |
+| `MEMBER_INDEX_KEY` | base64 of 32 random bytes (a **different** value) | **yes** | **required in production**. HMAC key for e-mail lookups and Google subjects. Generate the same way. **Never change it** once members exist (nobody could sign in) |
+| `WEB_BASE_URL` | `https://<web>.up.railway.app`, later `https://www.ecomacrobiz.com` | no | already listed above; required for Google sign-in (the redirect URI is derived from it) and for member e-mail links |
+| `GOOGLE_CLIENT_ID` | `…apps.googleusercontent.com` | no | from step 2.9. Empty = Google sign-in off (e-mail/password still works) |
+| `GOOGLE_CLIENT_SECRET` | `GOCSPX-…` | **yes** | from step 2.9; both or neither |
+| `MEMBER_REQUIRE_VERIFIED_EMAIL` | leave unset | no | defaults to `true` when an e-mail transport (`RESEND_API_KEY`…) and `WEB_BASE_URL` are set, else `false`; `true` without a transport fails the boot |
+| `TURNSTILE_SECRET` | optional | **yes** | Cloudflare Turnstile secret key (register, and login after 3 failures/IP). Empty = off |
+
+Optional tuning (defaults are fine): `MEMBER_SESSION_TTL=720h`, `MEMBER_HOLD_FIRST_COMMENT=true`,
+`MEMBER_REGISTER_RATE_LIMIT=5/1h`, `MEMBER_LOGIN_RATE_LIMIT=10/15m`, `COMMENT_RATE_LIMIT=6/1m`,
+`COMMENT_IP_RATE_LIMIT=30/10m`, `COMMENT_IMAGE_MAX_MB=5`, `AVATAR_MAX_MB=5`. **Never set `OIDC_ISSUER_URL`
+on Railway** (it exists only for the local stub provider and is rejected in production).
+
+**Migration note (community).** `00005_members` is purely additive (14 new tables, no change to existing
+tables). Proven on a pg_dump copy of the dev database: `migrate up` (00003→00005) → insert member/comment
+rows → `migrate down` (00005 removed, 0 community tables left) → `migrate up`; `posts`/`admin_users`/`leads`
+row counts identical at every step. Rolling the schema back (`server migrate down` once) deletes every
+member, comment, like and view counter — take a Railway Postgres backup first.
+
 After the admin exists and you have logged in once, you may delete
 `ADMIN_EMAIL` + `ADMIN_PASSWORD` (both together) — an existing password is
 never overwritten anyway unless `ADMIN_RESET_PASSWORD=true`.
@@ -185,6 +209,7 @@ never overwritten anyway unless `ADMIN_RESET_PASSWORD=true`.
 | `NEXT_PUBLIC_MEDIA_ORIGIN` | `https://<api>.up.railway.app` | `https://api.ecomacrobiz.com` | **build** | no | `images.remotePatterns` for `/media/**` — must equal api `PUBLIC_BASE_URL` |
 | `CLIENT_IP_HEADER` | `x-real-ip` | `cf-connecting-ip` | run | no | real visitor IP for the contact rate limit |
 | `INDEXNOW_KEY` | empty | same as api (after cutover) | run | no | serves `/<key>.txt` for IndexNow; empty = off |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | empty | optional | **build** | no | Cloudflare Turnstile site key shown on member registration; only together with the api `TURNSTILE_SECRET`. Empty = off |
 
 `NEXT_PUBLIC_*` are inlined by `next build` (they are `ARG`s in `web/Dockerfile`),
 so changing them needs a **redeploy** (Railway rebuilds automatically when you
@@ -229,6 +254,49 @@ Verify:
 curl -s https://<api>.up.railway.app/healthz        # {"db":"ok","status":"ok"}
 curl -s https://<web>.up.railway.app/api/healthz    # {"status":"ok"}
 ```
+
+### 2.9 Google sign-in (Google Cloud Console) — optional
+
+Do this once the web staging domain exists (2.8). Use an account of the
+company (not a personal one), because it owns the OAuth client.
+
+1. <https://console.cloud.google.com/> → project picker → **New project** →
+   name `ecomacrobiz-web` → Create, and select it.
+2. **APIs & Services → OAuth consent screen** (Google Auth Platform →
+   *Branding / Audience / Data access*):
+   - User type / Audience: **External**.
+   - App name `ECOMACROBIZ`, user support e-mail = a company mailbox,
+     developer contact e-mail = the same.
+   - App domain: home page `https://www.ecomacrobiz.com`, privacy policy
+     `https://www.ecomacrobiz.com/privacy`.
+   - **Authorized domains**: `ecomacrobiz.com` (the `*.up.railway.app`
+     staging host does not need to be listed here; the redirect URI in step 3
+     is what Google checks).
+   - Scopes (*Data access*): `openid`, `.../auth/userinfo.email`,
+     `.../auth/userinfo.profile` (these three are non-sensitive: no Google
+     review is needed).
+   - **Publish app** (Audience → *Publish app* → status "In production").
+     While it is "Testing", only listed test users can sign in.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
+   - Application type **Web application**, name `ecomacrobiz-web`.
+   - **Authorized JavaScript origins**: `https://<web>.up.railway.app` now;
+     add `https://www.ecomacrobiz.com` at the cutover.
+   - **Authorized redirect URIs** (must match exactly, no trailing slash):
+     - now: `https://<web>.up.railway.app/api/community/auth/google/callback`
+     - later (step 5.6): `https://www.ecomacrobiz.com/api/community/auth/google/callback`
+   - Create → copy the **Client ID** and **Client secret**.
+4. Railway → service **api** → Variables: `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` and `WEB_BASE_URL` (= the web origin whose redirect
+   URI you registered) → the api redeploys.
+5. Check: api logs `google sign-in enabled … redirect_uri=https://<web>/api/community/auth/google/callback`;
+   `curl -s https://<web>/api/community/config` shows `"google_enabled":true`;
+   sign in with a Google account on an article page → you come back to the same
+   page signed in. `redirect_uri_mismatch` from Google = the URI in step 3 does
+   not match `WEB_BASE_URL` exactly.
+
+When switching to `https://www.ecomacrobiz.com` (5.6), change `WEB_BASE_URL`
+on the api at the same time as adding the new redirect URI at Google (keep
+the old one until the old domain is removed).
 
 ## 3. Seed the 9 blog posts + bootstrap admin
 
@@ -313,6 +381,18 @@ curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" -H "Host: ecomacrobi
 6. `curl -sI https://<web>/knowledge/<legacy-thai-slug-percent-encoded>` → **301** to the new slug.
 7. Invite yourself a second address as `viewer` (copy link) → accept in a private window → confirm you can't see
    Users/Audit and the API answers 403 → deactivate it from `/admin/users`.
+
+### 4.2 Community checks (after deploying the members/comments release)
+
+1. api logs: `goose: successfully migrated database to version: 5`, no `MEMBER_DATA_KEY unset` warning,
+   `community … data_key_ids=[1]`, and `google sign-in enabled` (if configured).
+2. On an article: register with e-mail + password → verification mail arrives (when Resend is set) → open it.
+3. Post a comment → as a brand-new member it shows "รอการอนุมัติ"; approve it in `/admin` (comments
+   moderation) → it appears for anonymous visitors after revalidation.
+4. Like the article and the comment; reload → counts persist. `/api/community/stats?slugs=<slug>` shows them.
+5. Sign in with Google in a private window → back on the same page signed in.
+6. Account page: download the export, then delete the test account → its comment stays as
+   "ผู้ใช้ที่ลบบัญชี".
 
 ## 5. Cloudflare cutover
 
@@ -435,7 +515,9 @@ Also check https://dnschecker.org for NS/MX worldwide.
 
 ### 5.6 Switch the app to the final hostnames
 
-1. api: `PUBLIC_BASE_URL=https://api.ecomacrobiz.com`, `CORS_ALLOWED_ORIGINS=https://www.ecomacrobiz.com`.
+1. api: `PUBLIC_BASE_URL=https://api.ecomacrobiz.com`, `CORS_ALLOWED_ORIGINS=https://www.ecomacrobiz.com`,
+   `WEB_BASE_URL=https://www.ecomacrobiz.com` (and add
+   `https://www.ecomacrobiz.com/api/community/auth/google/callback` + the origin at Google first, step 2.9).
 2. web: `NEXT_PUBLIC_MEDIA_ORIGIN=https://api.ecomacrobiz.com`, `CLIENT_IP_HEADER=cf-connecting-ip` → redeploy.
 3. Remove the web service's `*.up.railway.app` domain (Settings → Networking) so
    nobody can bypass Cloudflare and spoof `cf-connecting-ip`. Keep the api

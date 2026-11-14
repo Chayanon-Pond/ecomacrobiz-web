@@ -91,6 +91,7 @@ experience without changing OS settings.
 | `NEXT_PUBLIC_SITE_URL` | Canonical origin, no trailing slash (metadataBase, canonical, JSON-LD, sitemap). |
 | `NEXT_PUBLIC_MEDIA_ORIGIN` | Public origin of API media (build time) -> `images.remotePatterns` for `/media/**`. Empty locally (Next 16 refuses to optimize private-IP images). Must equal the API's `PUBLIC_BASE_URL`. |
 | `CLIENT_IP_HEADER` | Optional header with the real visitor IP: `x-real-ip` on Railway without Cloudflare, `cf-connecting-ip` behind Cloudflare. Default = right-most X-Forwarded-For. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Optional Cloudflare Turnstile site key for member registration (build time; needs the API's `TURNSTILE_SECRET`). Empty = off. |
 | `PORT` / `HOSTNAME` | Standalone server listen address (image defaults `3000` / `::`). |
 
 `NEXT_PUBLIC_*` are build-time (Dockerfile `ARG`s). `NEXT_PUBLIC_SITE_URL=https://www.<domain>`
@@ -104,6 +105,18 @@ also enables the apex → www 301 and the HSTS header. Health: `GET /api/healthz
 `WEB_REVALIDATE_URL`, `REVALIDATE_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`, `ADMIN_RESET_PASSWORD`.
 Notifiers with unset env are disabled and only log.
 
+Community (members/comments, see `api/README.md` "Community API"):
+| Var | Purpose |
+| --- | --- |
+| `MEMBER_DATA_KEY` / `MEMBER_INDEX_KEY` | **Required in production**: base64 of 32 random bytes each (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Encrypt member e-mails (AES-256-GCM) / keyed blind index. Never lose them; never change the index key (rotation of the data key: `2:<new>,1:<old>`). Dev without them = random keys per boot + a warning. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional Google sign-in (both or neither; needs `WEB_BASE_URL`; redirect URI `${WEB_BASE_URL}/api/community/auth/google/callback`, setup in DEPLOY.md 2.9). Empty = button hidden. |
+| `TURNSTILE_SECRET` | Optional Cloudflare Turnstile for member register (and login after repeated failures). |
+| `MEMBER_REQUIRE_VERIFIED_EMAIL` | Default `true` only when an e-mail transport + `WEB_BASE_URL` exist; otherwise members can comment unverified (banner shown). |
+| `MEMBER_*`, `COMMENT_*`, `AVATAR_MAX_MB` | Tuning (session TTL, hold-first-comment, rate limits, upload sizes). |
+
+Local Google sign-in without Google: `cd api && go run ./cmd/oidcstub`, then run the API with
+`OIDC_ISSUER_URL=http://127.0.0.1:18090 GOOGLE_CLIENT_ID=stub-client GOOGLE_CLIENT_SECRET=stub-secret` (dev only; refused in production).
+
 ## Architecture
 
 ```
@@ -113,7 +126,9 @@ Browser ──> Next.js (web)
              ├─ POST /api/contact        ──> POST /api/v1/contact (validated twice, single client IP forwarded)
              ├─ /api/admin/[...path]     ──> /api/v1/admin/*  (same-origin proxy: escoma_admin cookie + X-CSRF-Token,
              │                                 revalidateTag after post mutations)
-             └─ POST /api/revalidate  <── Go API webhook after post create/update/delete
+             ├─ /api/community/[...path] ──> /api/v1/community/*  (same-origin member proxy: escoma_member cookie only,
+             │                                 + escoma_oauth on auth/google/*; OAuth 302s passed through)
+             └─ POST /api/revalidate  <── Go API webhook (posts, post:<slug>, redirects, comments:<slug>, post-stats)
 Go API ──> Postgres (posts, categories, post_categories, media, leads, admin_users, sessions)
        ──> MediaStore (local disk volume, /media/<uuid>.<ext>; S3/R2-ready interface)
        ──> Notifiers (SMTP email, LINE Messaging API push) — async, optional
@@ -128,21 +143,55 @@ web/src/
     (site)/layout.tsx          public chrome: SiteHeader, SiteFooter, MotionRuntime, CustomCursor
     (site)/page.tsx            homepage
     (site)/purpose|solutions|gallery|how-we-work|contact|privacy/page.tsx
-    (site)/knowledge/          index, [slug] (article), category/[category], feed.xml (RSS)
+    (site)/knowledge/          index, [slug] (article + stats bar + comments), category/[category], feed.xml (RSS)
+    (site)/account/, (site)/community-guidelines/   member account pages (noindex) + community rules
     admin/                     login, dashboard, posts (list/new/[id]), leads (list/[id]) — noindex
-    api/contact, api/revalidate, api/admin/[...path]   route handlers
+    api/contact, api/revalidate, api/admin/[...path], api/community/[...path]   route handlers
     sitemap.ts, robots.ts, not-found.tsx
   components/
     layout/ sections/ motion/ ui/        Phase 1 (homepage + motion system)
     pages/{purpose,solutions,gallery,how-we-work,shared}/   page sections (+ page CSS, prefixed)
     knowledge/ contact/ admin/          feature components
+    community/engagement/               stats (cards + article bar), tiny island loader, lazy runtime
+    community/comments/                 Facebook-style comments (server markup + lazy interactive island)
+    community/auth/, community/account/ sign-in modal (lazy) and /account UI
     content/Markdown.tsx + prose.css     shared Markdown renderer (article + admin preview)
   content/   typed copy: site, home, purpose, solutions, gallery, how-we-work, knowledge, contact, privacy,
              posts/posts.json (migrated Wix blog bundle) + posts/index.ts
   lib/       api/client.ts, posts.ts (cached data layer), contact/validation.ts (shared rules),
-             admin/*, seo/jsonld.tsx, media.ts, client-ip.ts, animations/*, text.ts
+             admin/*, seo/jsonld.tsx, media.ts, client-ip.ts, animations/*, text.ts,
+             community/* (types, browser client + session store, server.ts cached reads, proxy helpers,
+             time.ts Thai relative time, format.ts compact counts, avatar.ts)
 public/images/{gallery,purpose,solutions,knowledge/<slug>}/   WebP re-encoded from Wix originals
 ```
+
+### Community (web)
+
+Members, comments, likes and views on articles. API: see `api/README.md` "Community API".
+
+- **Proxy** `/api/community/[...path]` (pure helpers in `lib/community/proxy.ts`): whitelisted roots
+  (`config|auth|account|stats|posts|comments|uploads`), forwards only `escoma_member` (+ `escoma_oauth` on
+  `auth/google/*`, never `escoma_admin`), one client IP, body ≤ ~6.2 MB, `noindex` + `no-store`
+  (GET `config`/`stats` keep the API's public cache), Set-Cookie Path kept / Domain dropped, OAuth 302
+  `Location` passed through.
+- **Server data** (`lib/community/server.ts`, `'use cache'`, never throws): `getComments(slug)` (page 1
+  newest + 2 reply previews, anonymous) tag `comments:<slug>` / `hours`; `getStats(slugs)` tag
+  `post-stats` / `minutes`. API down → empty list / zeros (`live: false`, no counts in JSON-LD).
+- **Rendering**: cards (`PostCard` `stats` prop) show 👁 views · 💬 comments · ♥ likes as plain text in
+  the card link (server only). The article has a stats bar + heart like button under the header and the
+  comments section (`#comments`) server-rendered with the same components as the interactive version;
+  BlogPosting JSON-LD gains `commentCount`, `interactionStatistic` and `comment`.
+- **JS budget**: only `components/community/engagement/{Islands.tsx,loader.ts}` (~1.4 KB gz) ship with
+  the article. It sends the view beacon (after load + idle) and imports `engagement/runtime.tsx`
+  (comments island, ~19 KB gz) when `#comments` is within 600 px of the viewport, on the first
+  pointer/focus on a `[data-engage]` control (the first click is replayed), or right after a Google
+  round-trip (`#community=signed-in|error-*`; the saved pending action is replayed). The emoji picker
+  and the auth modal are further lazy chunks.
+- **Comments UX**: avatar + bubble, role badge, relative Thai time, "แก้ไขแล้ว", pending chip; like /
+  ตอบกลับ / "…" menu (แก้ไข · ลบ · รายงาน, moderators อนุมัติ · ซ่อน); inline reply composer with one
+  removable mention chip; composer with emoji, one image (upload progress), honeypot, elapsed time,
+  2000-char counter; optimistic posting with rollback; sort ล่าสุด/ยอดนิยม and pagination.
+- **Tests**: `web/tests/community-{proxy,format,comments,jsonld}.test.mts`.
 
 ## Legacy URL redirects (301, `web/next.config.ts`)
 
@@ -226,3 +275,7 @@ descriptions, exactly one `<h1>` per page).
   are stored as-is (not resized or metadata-stripped).
 - Audit logs are kept forever (no retention job).
 - Invite/reset e-mail (Resend/SMTP) and IndexNow submission are implemented but untested against the live services.
+- Community: member verification/reset e-mails are untested against a live transport (none configured yet); comment
+  reports and ban reasons have no retention purge job (the draft privacy policy promises 1 / 2 years); "connect Google"
+  from /account links only a Google account with the same e-mail; one image per comment, no GIF/stickers; replies are
+  one level deep (reply-to-reply = mention chip). Privacy policy + community guidelines are drafts pending legal review.
