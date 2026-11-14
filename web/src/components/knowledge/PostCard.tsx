@@ -1,5 +1,7 @@
 import Image from "next/image";
 import type { PostSummary } from "@/lib/posts";
+import type { Stats } from "@/lib/community/types";
+import { CardStats } from "@/components/community/engagement/StatsViews";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { ArrowIcon } from "@/components/ui/MagneticButton";
 import { formatThaiDate, isLocalImage, postHref, readingLabel } from "./format";
@@ -9,8 +11,11 @@ export function PostCard({
   post,
   headingLevel = "h3",
   sizes = "(min-width: 1280px) 28rem, (min-width: 640px) 46vw, 92vw",
+  stats,
 }: {
   post: PostSummary;
+  /** Views / comments / likes (lib/community/server.ts getStats); omitted = no counts row. */
+  stats?: Stats;
   headingLevel?: "h2" | "h3";
   sizes?: string;
 }) {
@@ -52,6 +57,7 @@ export function PostCard({
           </span>
           <ArrowIcon className="size-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
         </p>
+        {stats && <CardStats stats={stats} />}
       </div>
     </SpotlightCard>
   );
