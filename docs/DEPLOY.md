@@ -153,6 +153,23 @@ reference variables. "Staging" = the value while testing on `*.up.railway.app`;
 Optional tuning (defaults are fine): `SESSION_TTL=24h`, `CONTACT_RATE_LIMIT=5/10m`,
 `LOGIN_RATE_LIMIT=10/15m`, `MAX_UPLOAD_MB=8`, `SHUTDOWN_TIMEOUT=20s`, `COOKIE_DOMAIN` (leave empty).
 
+Admin v2 (all optional; defaults are safe):
+
+| Name | Value | Notes |
+| --- | --- | --- |
+| `WEB_BASE_URL` | `https://<web>.up.railway.app`, later `https://www.ecomacrobiz.com` | origin used in invite/reset e-mails and IndexNow. Unset ⇒ no invite e-mails (the admin UI always shows a copyable link anyway) |
+| `INVITE_TTL` | `72h` | invite + password-reset link lifetime |
+| `SCHEDULER_INTERVAL` | `60s` | how often scheduled posts are published (min 5s) |
+| `MEDIA_MAX_DIMENSION` | `2560` | uploads are downscaled to this longest side |
+| `INDEXNOW_KEY` | empty (off) | 8–128 `[A-Za-z0-9-]`; set the **same** value on the web service so `/<key>.txt` is served. Enable only after the Cloudflare cutover (step 5.6) |
+
+**Migration note (Admin v2).** The api applies `00003_admin_v2` and `00004_seo` on boot (`MIGRATE_ON_START`).
+Both are additive: existing admin users become role `owner`, posts/leads/media keep every value, new columns get
+defaults. Verified on a copy of a prod-like DB (old binary → seed → new binary up → down×2 → up, checksums equal;
+the old binary still serves the DB after `down`). Rollback = redeploy the previous commit; only run
+`server migrate down` (twice) if you must also roll the schema back — that drops audit logs, lead timelines,
+invites and redirects created since. Take a Railway Postgres backup before deploying.
+
 After the admin exists and you have logged in once, you may delete
 `ADMIN_EMAIL` + `ADMIN_PASSWORD` (both together) — an existing password is
 never overwritten anyway unless `ADMIN_RESET_PASSWORD=true`.
@@ -167,6 +184,7 @@ never overwritten anyway unless `ADMIN_RESET_PASSWORD=true`.
 | `NEXT_PUBLIC_SITE_URL` | `https://www.ecomacrobiz.com` | same | **build** | no | canonical/sitemap/JSON-LD + apex→www redirect + HSTS. Set it to www from day one (staging pages then canonicalise to the real site, so staging is not indexed as a duplicate). |
 | `NEXT_PUBLIC_MEDIA_ORIGIN` | `https://<api>.up.railway.app` | `https://api.ecomacrobiz.com` | **build** | no | `images.remotePatterns` for `/media/**` — must equal api `PUBLIC_BASE_URL` |
 | `CLIENT_IP_HEADER` | `x-real-ip` | `cf-connecting-ip` | run | no | real visitor IP for the contact rate limit |
+| `INDEXNOW_KEY` | empty | same as api (after cutover) | run | no | serves `/<key>.txt` for IndexNow; empty = off |
 
 `NEXT_PUBLIC_*` are inlined by `next build` (they are `ARG`s in `web/Dockerfile`),
 so changing them needs a **redeploy** (Railway rebuilds automatically when you
@@ -283,6 +301,18 @@ curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" -H "Host: ecomacrobi
       `/knowledge`, one article, `/contact`. Targets: Performance ≥ 90, SEO/BP/A11y ≥ 95.
       Run twice (first run warms the cache). Record the numbers.
 - [ ] Unknown URL `/does-not-exist` → 404 page with status 404.
+
+### 4.1 Admin v2 checks after deploying `Develop` → `main`
+
+1. api logs: `goose: successfully migrated database to version: 4`, `admin bootstrap … outcome=exists`, scheduler started.
+2. Log in at `/admin` with the existing admin → user menu shows **เจ้าของระบบ (owner)**; `/admin/users` lists you as owner.
+3. `/admin/audit` shows your `auth.login`.
+4. Open a seeded post in the editor → change nothing → no "unsaved changes"; the public article is unchanged.
+5. Create a test draft, schedule it 2 minutes ahead → it appears on `/knowledge` within ~1 minute after the time;
+   then unpublish it (choose 410) → its URL answers **410**; delete it.
+6. `curl -sI https://<web>/knowledge/<legacy-thai-slug-percent-encoded>` → **301** to the new slug.
+7. Invite yourself a second address as `viewer` (copy link) → accept in a private window → confirm you can't see
+   Users/Audit and the API answers 403 → deactivate it from `/admin/users`.
 
 ## 5. Cloudflare cutover
 
