@@ -16,14 +16,37 @@ type PostFilter struct {
 
 type AdminPostFilter struct {
 	domain.Page
-	Status string // "", "all", "draft", "published"
-	Query  string
+	Status       string // "", "all", "draft", "published", "scheduled"
+	Query        string
+	CategorySlug string
+	Sort         string // see PostSorts; "" = updated_desc
 }
+
+// PostSorts are the admin list orders (first = default).
+var PostSorts = []string{"updated_desc", "updated_asc", "published_desc", "published_asc", "title_asc"}
 
 type LeadFilter struct {
 	domain.Page
 	Status string
 	Query  string
+	// Assigned: "" = anyone, "none" = unassigned, otherwise an admin user id.
+	Assigned string
+	// CreatedFrom (inclusive) / CreatedTo (exclusive); nil = unbounded.
+	CreatedFrom, CreatedTo *time.Time
+}
+
+// LeadChange is a partial lead update; nil / AssignSet=false = unchanged.
+type LeadChange struct {
+	Status     *domain.LeadStatus
+	AssignSet  bool
+	AssignedTo *string // nil with AssignSet = unassign
+	Note       *string // legacy single note
+}
+
+type MediaFilter struct {
+	domain.Page
+	Query string // original_name or alt
+	Mime  string // "" = all
 }
 
 type Categories interface {
@@ -46,6 +69,15 @@ type Posts interface {
 	SoftDelete(ctx context.Context, id string) (domain.Post, error)
 	// UpsertBySlug is used by the seeder; it reports whether a row changed.
 	UpsertBySlug(ctx context.Context, p *domain.Post) (changed bool, err error)
+	// SlugsTaken returns the candidates already used as the slug or a legacy
+	// slug of a live post other than excludeID.
+	SlugsTaken(ctx context.Context, candidates []string, excludeID string) ([]string, error)
+	// SetStatus changes only status and published_at (bulk actions).
+	SetStatus(ctx context.Context, id string, status domain.PostStatus, publishedAt *time.Time) (domain.Post, error)
+	// PublishDue atomically flips due scheduled posts to published. Safe to run
+	// concurrently: each post is returned by exactly one caller.
+	PublishDue(ctx context.Context, now time.Time) ([]domain.PostRef, error)
+	Stats(ctx context.Context) (domain.PostStats, error)
 }
 
 type Leads interface {
@@ -53,6 +85,17 @@ type Leads interface {
 	List(ctx context.Context, f LeadFilter) ([]domain.Lead, int, error)
 	Get(ctx context.Context, id string) (domain.Lead, error)
 	UpdateStatus(ctx context.Context, id string, status domain.LeadStatus, note *string) (domain.Lead, error)
+	// Apply updates status/assignee/note and writes the matching
+	// lead_activities rows (status, assign) in one transaction.
+	Apply(ctx context.Context, id string, ch LeadChange, actor domain.Actor) (before, after domain.Lead, err error)
+	AddNote(ctx context.Context, leadID string, actor domain.Actor, body string) (domain.LeadActivity, error)
+	// Activities: newest first.
+	Activities(ctx context.Context, leadID string) ([]domain.LeadActivity, error)
+	// Board returns up to perColumn newest leads per status plus full counts.
+	Board(ctx context.Context, f LeadFilter, perColumn int) (map[domain.LeadStatus][]domain.Lead, map[domain.LeadStatus]int, error)
+	// Assignees: active users whose role is one of roles, by name.
+	Assignees(ctx context.Context, roles []domain.Role) ([]domain.UserRef, error)
+	Stats(ctx context.Context, now time.Time) (domain.LeadStats, error)
 }
 
 type AdminUsers interface {
@@ -62,6 +105,23 @@ type AdminUsers interface {
 	UpdatePassword(ctx context.Context, id, hash string) error
 	UpdateName(ctx context.Context, id, name string) error
 	TouchLogin(ctx context.Context, id string, at time.Time) error
+
+	// List returns all users (incl. inactive): owners first, then by name.
+	List(ctx context.Context) ([]domain.AdminUser, error)
+	// SetPassword stores a new hash and password_changed_at.
+	SetPassword(ctx context.Context, id, hash string, at time.Time) error
+	// UpdateAccess changes role and/or is_active in one transaction that
+	// locks the active owners (SELECT ... FOR UPDATE) and returns
+	// domain.ErrLastOwner if no active owner would remain. Deactivation
+	// deletes all of the user's sessions in the same transaction.
+	UpdateAccess(ctx context.Context, id string, role *domain.Role, active *bool) (before, after domain.AdminUser, err error)
+	// Delete removes the user (sessions cascade) under the same last-owner
+	// rule as UpdateAccess.
+	Delete(ctx context.Context, id string) (domain.AdminUser, error)
+	// RestoreOwner is the ADMIN_RESET_PASSWORD break-glass: role=owner,
+	// is_active=true.
+	RestoreOwner(ctx context.Context, id string) error
+	CountActiveOwners(ctx context.Context) (int, error)
 }
 
 type Sessions interface {
@@ -71,9 +131,66 @@ type Sessions interface {
 	DeleteByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteByUser(ctx context.Context, userID string) error
 	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
+
+	// ListByUser returns the user's unexpired sessions, newest first.
+	ListByUser(ctx context.Context, userID string, now time.Time) ([]domain.Session, error)
+	// DeleteByUserExcept deletes all of the user's sessions but keepID.
+	DeleteByUserExcept(ctx context.Context, userID, keepID string) (int64, error)
+	// Touch sets last_seen_at = now unless it was set less than a minute ago.
+	Touch(ctx context.Context, id string, now time.Time) error
+}
+
+// UserTokens stores invitation and password-reset tokens (hash only).
+type UserTokens interface {
+	// Create inserts an open token; ErrConflict when an open invite for the
+	// email already exists.
+	Create(ctx context.Context, t *domain.UserToken) error
+	Get(ctx context.Context, id string) (domain.UserToken, error)
+	GetByHash(ctx context.Context, hash []byte) (domain.UserToken, error)
+	// ListOpenInvites: invites not used and not revoked (incl. expired),
+	// newest first, with CreatedBy resolved.
+	ListOpenInvites(ctx context.Context) ([]domain.UserToken, error)
+	// RevokeInvite revokes an open invite; ErrNotFound if none.
+	RevokeInvite(ctx context.Context, id string, now time.Time) (domain.UserToken, error)
+	RevokeOpenInvitesFor(ctx context.Context, email string, now time.Time) error
+	RevokeOpenResetsFor(ctx context.Context, userID string, now time.Time) error
+	// RotateInvite replaces the hash and expiry of an open invite.
+	RotateInvite(ctx context.Context, id string, hash []byte, expiresAt time.Time) (domain.UserToken, error)
+	// AcceptInvite, in one transaction, consumes the invite (UPDATE ... WHERE
+	// used_at IS NULL AND revoked_at IS NULL AND expires_at > now RETURNING)
+	// and creates the user with the invite's role and invited_by.
+	// ErrTokenInvalid if not consumable, ErrConflict if the email exists.
+	AcceptInvite(ctx context.Context, hash []byte, now time.Time, u *domain.AdminUser) (domain.UserToken, error)
+	// ConsumeReset, in one transaction, consumes the reset token, sets the
+	// (active) user's password + password_changed_at and deletes all of the
+	// user's sessions. ErrTokenInvalid if not consumable.
+	ConsumeReset(ctx context.Context, hash []byte, now time.Time, passwordHash string) (domain.AdminUser, error)
+}
+
+type AuditFilter struct {
+	domain.Page
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	From, To   *time.Time // [From, To)
+}
+
+// AuditLogs is the append-only audit trail.
+type AuditLogs interface {
+	Insert(ctx context.Context, ev domain.AuditEvent) error
+	// List returns entries newest first with ActorName joined.
+	List(ctx context.Context, f AuditFilter) ([]domain.AuditEntry, int, error)
 }
 
 type Media interface {
 	Create(ctx context.Context, m *domain.Media) error
 	Get(ctx context.Context, id string) (domain.Media, error)
+	// List: newest first, UsageCount filled.
+	List(ctx context.Context, f MediaFilter) ([]domain.Media, int, error)
+	Usage(ctx context.Context, id string) ([]domain.MediaUsage, error)
+	UpdateAlt(ctx context.Context, id, alt string) (domain.Media, error)
+	// SoftDeleteUnused deletes the row unless live posts use it
+	// (*domain.InUseError). Returns the deleted row.
+	SoftDeleteUnused(ctx context.Context, id string) (domain.Media, error)
 }

@@ -59,7 +59,9 @@ type PGPosts struct{ db DB }
 
 const postColsTmpl = `p.id, p.slug, p.legacy_slugs, p.title, p.excerpt, %s, p.cover_media_id,
 	p.cover_url, p.cover_alt, p.cover_width, p.cover_height, p.author, p.status, p.published_at,
-	p.featured, p.reading_minutes, p.seo_title, p.seo_description, p.created_at, p.updated_at`
+	p.featured, p.reading_minutes, p.seo_title, p.seo_description, p.created_at, p.updated_at,
+	p.created_by, (SELECT u.name FROM admin_users u WHERE u.id = p.created_by),
+	(SELECT u.email FROM admin_users u WHERE u.id = p.created_by)`
 
 var (
 	postSummaryCols = fmt.Sprintf(postColsTmpl, `'' AS body_markdown`)
@@ -74,13 +76,16 @@ func scanPost(row pgx.Row) (domain.Post, error) {
 		coverWidth, coverHeight *int32
 		status                  string
 		legacy                  []string
+		byID, byName, byEmail   *string
 	)
 	err := row.Scan(&p.ID, &p.Slug, &legacy, &p.Title, &p.Excerpt, &p.BodyMarkdown, &p.CoverMediaID,
 		&coverURL, &coverAlt, &coverWidth, &coverHeight, &p.Author, &status, &p.PublishedAt,
-		&p.Featured, &p.ReadingMinutes, &p.SEOTitle, &p.SEODescription, &p.CreatedAt, &p.UpdatedAt)
+		&p.Featured, &p.ReadingMinutes, &p.SEOTitle, &p.SEODescription, &p.CreatedAt, &p.UpdatedAt,
+		&byID, &byName, &byEmail)
 	if err != nil {
 		return p, err
 	}
+	p.CreatedBy = userRef(byID, byName, byEmail)
 	p.Status = domain.PostStatus(status)
 	if legacy == nil {
 		legacy = []string{}
@@ -194,13 +199,18 @@ func (r *PGPosts) one(ctx context.Context, row pgx.Row) (domain.Post, error) {
 func (r *PGPosts) AdminList(ctx context.Context, f AdminPostFilter) ([]domain.Post, int, error) {
 	conds := []string{"p.deleted_at IS NULL"}
 	var args []any
-	if f.Status == string(domain.PostDraft) || f.Status == string(domain.PostPublished) {
+	if domain.PostStatus(f.Status).Valid() {
 		args = append(args, f.Status)
 		conds = append(conds, fmt.Sprintf("p.status = $%d", len(args)))
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		args = append(args, likePattern(q))
 		conds = append(conds, fmt.Sprintf("(p.title ILIKE $%[1]d OR p.slug ILIKE $%[1]d)", len(args)))
+	}
+	if f.CategorySlug != "" {
+		args = append(args, f.CategorySlug)
+		conds = append(conds, fmt.Sprintf(`EXISTS (SELECT 1 FROM post_categories pc JOIN categories c
+			ON c.id = pc.category_id WHERE pc.post_id = p.id AND c.slug = $%d)`, len(args)))
 	}
 	where := strings.Join(conds, " AND ")
 	var total int
@@ -210,7 +220,7 @@ func (r *PGPosts) AdminList(ctx context.Context, f AdminPostFilter) ([]domain.Po
 	n := len(args)
 	args = append(args, f.PerPage, f.Offset())
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`SELECT %s FROM posts p WHERE %s
-		ORDER BY p.updated_at DESC, p.id DESC LIMIT $%d OFFSET $%d`, postSummaryCols, where, n+1, n+2), args...)
+		ORDER BY %s LIMIT $%d OFFSET $%d`, postSummaryCols, where, adminPostOrder(f.Sort), n+1, n+2), args...)
 	if err != nil {
 		return nil, 0, err
 	}

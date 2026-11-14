@@ -35,9 +35,21 @@ type Config struct {
 	CookieDomain string
 	SessionTTL   time.Duration
 
+	// InviteTTL is the lifetime of invitation and password-reset links.
+	InviteTTL time.Duration
+	// WebBaseURL (optional) is the public web origin used to build the links
+	// e-mailed for invitations/resets: <WebBaseURL>/admin/invite#token=...
+	WebBaseURL string
+
 	PublicBaseURL  string
 	MediaDir       string
 	MaxUploadBytes int64
+	// MediaMaxDimension: uploaded JPEG/PNG are downscaled so the longest
+	// side is at most this many pixels.
+	MediaMaxDimension int
+
+	// SchedulerInterval: how often scheduled posts are checked (min 5s).
+	SchedulerInterval time.Duration
 
 	ContactRateLimit RateLimit
 	LoginRateLimit   RateLimit
@@ -85,9 +97,13 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		CookieSecure:       e.bool("COOKIE_SECURE", true),
 		CookieDomain:       e.str("COOKIE_DOMAIN", ""),
 		SessionTTL:         e.duration("SESSION_TTL", 24*time.Hour),
+		InviteTTL:          e.duration("INVITE_TTL", 72*time.Hour),
+		WebBaseURL:         strings.TrimRight(e.str("WEB_BASE_URL", ""), "/"),
 		PublicBaseURL:      strings.TrimRight(e.str("PUBLIC_BASE_URL", "http://localhost:8080"), "/"),
 		MediaDir:           e.str("MEDIA_DIR", "./data/media"),
 		MaxUploadBytes:     int64(e.int("MAX_UPLOAD_MB", 8)) << 20,
+		MediaMaxDimension:  e.int("MEDIA_MAX_DIMENSION", 2560),
+		SchedulerInterval:  e.duration("SCHEDULER_INTERVAL", 60*time.Second),
 		ContactRateLimit:   e.rate("CONTACT_RATE_LIMIT", RateLimit{5, 10 * time.Minute}),
 		LoginRateLimit:     e.rate("LOGIN_RATE_LIMIT", RateLimit{10, 15 * time.Minute}),
 		SMTPHost:           e.str("SMTP_HOST", ""),
@@ -151,8 +167,23 @@ func (c *Config) validate(e *envReader) {
 	if c.SessionTTL < time.Minute {
 		e.fail("SESSION_TTL", "must be at least 1m")
 	}
+	if c.InviteTTL < 10*time.Minute || c.InviteTTL > 30*24*time.Hour {
+		e.fail("INVITE_TTL", "must be between 10m and 720h")
+	}
+	if c.WebBaseURL != "" {
+		if u, err := url.Parse(c.WebBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			e.fail("WEB_BASE_URL", "must be an origin like https://www.example.com")
+		}
+	}
 	if c.MaxUploadBytes <= 0 || c.MaxUploadBytes > 100<<20 {
 		e.fail("MAX_UPLOAD_MB", "must be 1-100")
+	}
+	if c.MediaMaxDimension < 320 || c.MediaMaxDimension > 10000 {
+		e.fail("MEDIA_MAX_DIMENSION", "must be 320-10000")
+	}
+	if c.SchedulerInterval < 5*time.Second {
+		e.fail("SCHEDULER_INTERVAL", "must be at least 5s")
 	}
 	if c.MediaDir == "" {
 		e.fail("MEDIA_DIR", "must not be empty")
@@ -203,6 +234,17 @@ func (c *Config) ResendEnabled() bool {
 }
 
 func (c *Config) LineEnabled() bool { return c.LineChannelAccessToken != "" && c.LineTo != "" }
+
+// EmailProvider is the active e-mail transport: "resend", "smtp" or "".
+func (c *Config) EmailProvider() string {
+	switch {
+	case c.ResendEnabled():
+		return "resend"
+	case c.SMTPEnabled():
+		return "smtp"
+	}
+	return ""
+}
 
 type envReader struct {
 	get  func(string) string

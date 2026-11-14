@@ -61,6 +61,10 @@ func (r *Resend) NotifyLead(ctx context.Context, lead domain.Lead) error {
 	if a, err := mail.ParseAddress(lead.Email); err == nil && lead.Email != "" {
 		body["reply_to"] = a.Address
 	}
+	return r.post(ctx, body)
+}
+
+func (r *Resend) post(ctx context.Context, body map[string]any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err

@@ -20,6 +20,7 @@ const (
 	CodeForbidden       = "forbidden"
 	CodePayloadTooLarge = "payload_too_large"
 	CodeInternal        = "internal"
+	CodeInUse           = "in_use"
 )
 
 type ErrorBody struct {
@@ -66,7 +67,12 @@ var (
 func FromError(c *gin.Context, log *slog.Logger, err error) {
 	var ve *domain.ValidationError
 	var mbe *http.MaxBytesError
+	var iu *domain.InUseError
 	switch {
+	case errors.Is(err, domain.ErrNoPermission):
+		Error(c, http.StatusForbidden, CodeForbidden, domain.MsgNoPermission, nil)
+	case errors.As(err, &iu):
+		Error(c, http.StatusConflict, CodeInUse, iu.Message(), nil)
 	case errors.As(err, &ve):
 		msg := ve.Message
 		if msg == "" {

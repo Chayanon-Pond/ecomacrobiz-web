@@ -1,27 +1,44 @@
 "use client";
 
 /**
- * Admin session (client-side). The session cookie is HttpOnly; the CSRF
- * token lives only in React state (never localStorage) and is re-fetched
- * from /auth/me on load and after a 403.
+ * Admin session (client side). The server already verified the session in
+ * app/admin/(console)/layout.tsx and passes the SessionPayload in as
+ * `initial`, so nothing renders unauthenticated and there is no client
+ * flash. The session cookie is HttpOnly; the CSRF token lives only in memory.
+ *
+ * request():
+ *  - adds X-CSRF-Token on mutations;
+ *  - 403 on a mutation whose message is NOT the permission message => stale
+ *    CSRF (new session in another tab): refresh /auth/me and retry once;
+ *  - 403 permission on a mutation => toast the API message (no logout);
+ *  - 401 => hard redirect to /admin/login?next=<current path>.
  */
-import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { ApiError, rawRequest, toApiError, type RequestOptions } from "@/lib/admin/client";
+import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { ApiError, MSG_NO_PERMISSION, rawRequest, toApiError, type RequestOptions } from "@/lib/admin/client";
+import { loginUrl } from "@/lib/admin/next-path";
+import { can as canFn, canAny as canAnyFn, type Permission } from "@/lib/admin/permissions";
 import type { AdminUser, SessionPayload } from "@/lib/admin/types";
-
-type Status = "loading" | "authed" | "anon";
+import { useToast } from "./ui/Toast";
 
 export type AdminRequest = <T>(path: string, opts?: RequestOptions) => Promise<T>;
 
 type SessionCtx = {
-  status: Status;
-  user: AdminUser | null;
-  /** JSON request with CSRF, 401 -> login, 403 -> refresh token + retry once. */
+  /** Always "authed" inside the console (kept for older callers). */
+  status: "authed" | "anon";
+  user: AdminUser;
+  permissions: Permission[];
+  /** true when the user has ALL of the permissions (cosmetic; the API enforces). */
+  can: (...need: Permission[]) => boolean;
+  /** true when the user has ANY of the permissions. */
+  canAny: (...need: Permission[]) => boolean;
   request: AdminRequest;
   /** Same as request but resolves with the raw Response (downloads). */
   requestRaw: (path: string, opts?: RequestOptions) => Promise<Response>;
   setSession: (s: SessionPayload) => void;
+  /** Local update after PUT /account/profile. */
+  updateUser: (u: AdminUser) => void;
+  /** Re-reads /auth/me (role or permissions may have changed). */
+  refresh: () => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -33,28 +50,37 @@ export function useAdmin(): SessionCtx {
   return v;
 }
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const [status, setStatus] = useState<Status>("loading");
-  const [user, setUser] = useState<AdminUser | null>(null);
-  const csrf = useRef<string | null>(null);
+function currentPath(): string {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+export function SessionProvider({ initial, children }: { initial: SessionPayload; children: ReactNode }) {
+  const toast = useToast();
+  const [user, setUser] = useState<AdminUser>(initial.user);
+  const [permissions, setPermissions] = useState<Permission[]>(initial.permissions);
+  const csrf = useRef<string>(initial.csrf_token);
+  const leaving = useRef(false);
 
   const setSession = useCallback((s: SessionPayload) => {
     csrf.current = s.csrf_token;
     setUser(s.user);
-    setStatus("authed");
+    setPermissions(s.permissions);
   }, []);
 
-  // Session gone: <Guard> in AdminShell redirects to /admin/login?next=...
   const toLogin = useCallback(() => {
-    csrf.current = null;
-    setUser(null);
-    setStatus("anon");
+    if (leaving.current) return;
+    leaving.current = true;
+    // Hard navigation: drops all client state and re-runs the server check.
+    window.location.assign(loginUrl(currentPath()));
   }, []);
 
-  const fetchMe = useCallback(async (): Promise<boolean> => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     try {
       const res = await rawRequest("auth/me", {}, null);
+      if (res.status === 401) {
+        toLogin();
+        return false;
+      }
       if (!res.ok) return false;
       const json = (await res.json()) as { data: SessionPayload };
       setSession(json.data);
@@ -62,40 +88,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       return false;
     }
-  }, [setSession]);
-
-  useEffect(() => {
-    let alive = true;
-    rawRequest("auth/me", {}, null)
-      .then(async (res) => {
-        if (!alive) return;
-        if (res.ok) {
-          const json = (await res.json()) as { data: SessionPayload };
-          if (alive) setSession(json.data);
-        } else {
-          setStatus("anon");
-        }
-      })
-      .catch(() => alive && setStatus("anon"));
-    return () => {
-      alive = false;
-    };
-  }, [setSession]);
+  }, [setSession, toLogin]);
 
   const requestRaw = useCallback(
     async (path: string, opts: RequestOptions = {}): Promise<Response> => {
+      const mutation = (opts.method ?? "GET") !== "GET";
       let res = await rawRequest(path, opts, csrf.current);
-      if (res.status === 403 && (opts.method ?? "GET") !== "GET") {
-        // CSRF token may be stale (new session in another tab): refresh once.
-        if (await fetchMe()) res = await rawRequest(path, opts, csrf.current);
+      if (res.status === 403 && mutation) {
+        const err = await toApiError(res.clone());
+        if (err.message !== MSG_NO_PERMISSION && (await refresh())) {
+          res = await rawRequest(path, opts, csrf.current);
+        }
       }
       if (res.status === 401) {
         toLogin();
         throw await toApiError(res);
       }
+      if (res.status === 403 && mutation) {
+        const err = await toApiError(res);
+        err.notified = true;
+        toast.error(err.message);
+        throw err;
+      }
       return res;
     },
-    [fetchMe, toLogin],
+    [refresh, toLogin, toast],
   );
 
   const request = useCallback(
@@ -115,19 +132,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       /* best effort: the cookie expires on its own */
     }
-    csrf.current = null;
-    setUser(null);
-    setStatus("anon");
-    router.replace("/admin/login");
-  }, [router]);
+    leaving.current = true;
+    // Hard navigation on purpose: drops all in-memory session state (CSRF, caches).
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/admin/login");
+  }, []);
 
-  const value = useMemo(
-    () => ({ status, user, request, requestRaw, setSession, logout }),
-    [status, user, request, requestRaw, setSession, logout],
+  const can = useCallback((...need: Permission[]) => canFn(permissions, ...need), [permissions]);
+  const canAny = useCallback((...need: Permission[]) => canAnyFn(permissions, ...need), [permissions]);
+
+  const value = useMemo<SessionCtx>(
+    () => ({
+      status: "authed",
+      user,
+      permissions,
+      can,
+      canAny,
+      request,
+      requestRaw,
+      setSession,
+      updateUser: setUser,
+      refresh,
+      logout,
+    }),
+    [user, permissions, can, canAny, request, requestRaw, setSession, refresh, logout],
   );
   return <Ctx value={value}>{children}</Ctx>;
 }
 
+/** Thai message for any error ("" for aborted requests: show nothing). */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 429 && err.retryAfter) {
@@ -137,4 +170,9 @@ export function errorMessage(err: unknown): string {
   }
   if (err instanceof DOMException && err.name === "AbortError") return "";
   return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่";
+}
+
+/** true when the session layer already toasted this error (skip a second toast). */
+export function alreadyNotified(err: unknown): boolean {
+  return err instanceof ApiError && err.notified;
 }

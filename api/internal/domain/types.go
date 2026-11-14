@@ -7,9 +7,12 @@ type PostStatus string
 const (
 	PostDraft     PostStatus = "draft"
 	PostPublished PostStatus = "published"
+	// PostScheduled: published_at is in the future; the scheduler flips it to
+	// published when due (UPDATE ... WHERE status='scheduled' AND published_at <= now()).
+	PostScheduled PostStatus = "scheduled"
 )
 
-func (s PostStatus) Valid() bool { return s == PostDraft || s == PostPublished }
+func (s PostStatus) Valid() bool { return s == PostDraft || s == PostPublished || s == PostScheduled }
 
 type LeadStatus string
 
@@ -80,6 +83,7 @@ type Post struct {
 	ReadingMinutes int
 	SEOTitle       string
 	SEODescription string
+	CreatedBy      *UserRef // nil when unknown or the user was deleted
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -111,6 +115,7 @@ type Lead struct {
 	SourcePage       string
 	IP               string
 	UserAgent        string
+	AssignedTo       *UserRef
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -120,9 +125,13 @@ type AdminUser struct {
 	Email        string
 	Name         string
 	PasswordHash string
+	Role         Role
 	IsActive     bool
 	LastLoginAt  *time.Time
 	CreatedAt    time.Time
+
+	PasswordChangedAt *time.Time
+	InvitedBy         *string
 }
 
 type Session struct {
@@ -134,6 +143,7 @@ type Session struct {
 	UserAgent   string
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
+	LastSeenAt  *time.Time // touched at most once per minute
 }
 
 type Media struct {
@@ -146,6 +156,9 @@ type Media struct {
 	Width        int
 	Height       int
 	UploadedBy   *string
+	Uploader     *UserRef // joined uploaded_by (nil when unknown/deleted)
+	Alt          string
+	UsageCount   int // live posts referencing the file (list/get queries)
 	CreatedAt    time.Time
 }
 

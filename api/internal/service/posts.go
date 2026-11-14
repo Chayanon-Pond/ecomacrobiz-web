@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,13 +27,15 @@ type PostService struct {
 	categories repository.Categories
 	media      repository.Media
 	revalidate Revalidator
+	audit      Auditor
 	log        *slog.Logger
 	Now        func() time.Time
 }
 
 func NewPostService(posts repository.Posts, cats repository.Categories, media repository.Media,
-	rv Revalidator, log *slog.Logger) *PostService {
-	return &PostService{posts: posts, categories: cats, media: media, revalidate: rv, log: log, Now: time.Now}
+	rv Revalidator, audit Auditor, log *slog.Logger) *PostService {
+	return &PostService{posts: posts, categories: cats, media: media, revalidate: rv, audit: audit, log: log,
+		Now: time.Now}
 }
 
 type CoverInput struct {
@@ -125,6 +128,20 @@ func (s *PostService) GetPublished(ctx context.Context, slug string) (domain.Pos
 // ---- admin ----
 
 func (s *PostService) AdminList(ctx context.Context, f repository.AdminPostFilter) ([]domain.Post, int, error) {
+	var v domain.Validator
+	if f.Status == "all" {
+		f.Status = ""
+	}
+	if f.Status != "" && !domain.PostStatus(f.Status).Valid() {
+		v.Add("status", "สถานะต้องเป็น all, draft, published หรือ scheduled")
+	}
+	if f.Sort != "" && !slices.Contains(repository.PostSorts, f.Sort) {
+		v.Add("sort", "รูปแบบการเรียงลำดับไม่ถูกต้อง")
+	}
+	f.CategorySlug = strings.TrimSpace(f.CategorySlug)
+	if err := v.Err(); err != nil {
+		return nil, 0, err
+	}
 	return s.posts.AdminList(ctx, f)
 }
 
@@ -135,27 +152,70 @@ func (s *PostService) Get(ctx context.Context, id string) (domain.Post, error) {
 	return s.posts.GetByID(ctx, id)
 }
 
-func (s *PostService) Create(ctx context.Context, in PostInput, actorID string) (domain.Post, error) {
+// canPublish: publishing, scheduling and touching non-draft posts needs
+// posts:publish (posts:write alone may only work on drafts).
+func canPublish(a domain.Actor) bool { return a.Role.Has(domain.PermPostsPublish) }
+
+func (s *PostService) record(ctx context.Context, a domain.Actor, action string, p domain.Post, meta map[string]any) {
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	meta["slug"] = p.Slug
+	s.audit.Record(ctx, domain.AuditEvent{Actor: a, Action: action, TargetType: domain.TargetPost, TargetID: p.ID,
+		Metadata: meta})
+}
+
+func (s *PostService) Create(ctx context.Context, in PostInput, actor domain.Actor) (domain.Post, error) {
+	if st := domain.PostStatus(strings.TrimSpace(in.Status)); st.Valid() && st != domain.PostDraft && !canPublish(actor) {
+		return domain.Post{}, domain.ErrNoPermission
+	}
 	p, err := s.build(ctx, in, nil)
 	if err != nil {
 		return p, err
 	}
 	var by *string
-	if actorID != "" {
-		by = &actorID
+	if !actor.IsSystem() {
+		by = &actor.ID
 	}
 	if err := s.posts.Create(ctx, &p, by); err != nil {
 		return p, slugConflict(err)
 	}
-	s.log.Info("post created", "post_id", p.ID, "slug", p.Slug, "status", p.Status, "actor", actorID)
+	s.log.Info("post created", "post_id", p.ID, "slug", p.Slug, "status", p.Status, "actor", actor.ID)
+	s.record(ctx, actor, domain.AuditPostCreate, p, map[string]any{"status": string(p.Status)})
 	s.revalidate.Revalidate("posts", "post:"+p.Slug)
 	return p, nil
 }
 
-func (s *PostService) Update(ctx context.Context, id string, in PostInput, actorID string) (domain.Post, error) {
+// updateAction maps a status transition onto its audit action.
+func updateAction(from, to domain.Post) string {
+	switch {
+	case to.Status == domain.PostPublished && from.Status != domain.PostPublished:
+		return domain.AuditPostPublish
+	case from.Status == domain.PostPublished && to.Status == domain.PostDraft:
+		return domain.AuditPostUnpublish
+	case to.Status == domain.PostScheduled &&
+		(from.Status != domain.PostScheduled || !sameTime(from.PublishedAt, to.PublishedAt)):
+		return domain.AuditPostSchedule
+	default:
+		return domain.AuditPostUpdate
+	}
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
+func (s *PostService) Update(ctx context.Context, id string, in PostInput, actor domain.Actor) (domain.Post, error) {
 	existing, err := s.Get(ctx, id)
 	if err != nil {
 		return existing, err
+	}
+	newStatus := domain.PostStatus(strings.TrimSpace(in.Status))
+	if !canPublish(actor) && (existing.Status != domain.PostDraft || (newStatus.Valid() && newStatus != domain.PostDraft)) {
+		return domain.Post{}, domain.ErrNoPermission
 	}
 	p, err := s.build(ctx, in, &existing)
 	if err != nil {
@@ -165,7 +225,17 @@ func (s *PostService) Update(ctx context.Context, id string, in PostInput, actor
 	if err := s.posts.Update(ctx, &p); err != nil {
 		return p, slugConflict(err)
 	}
-	s.log.Info("post updated", "post_id", p.ID, "slug", p.Slug, "status", p.Status, "actor", actorID)
+	action := updateAction(existing, p)
+	s.log.Info("post updated", "post_id", p.ID, "slug", p.Slug, "status", p.Status, "action", action,
+		"actor", actor.ID)
+	meta := map[string]any{"from": string(existing.Status), "to": string(p.Status)}
+	if p.Status == domain.PostScheduled && p.PublishedAt != nil {
+		meta["published_at"] = p.PublishedAt.UTC().Format(time.RFC3339)
+	}
+	if existing.Slug != p.Slug {
+		meta["old_slug"] = existing.Slug
+	}
+	s.record(ctx, actor, action, p, meta)
 	tags := []string{"posts", "post:" + p.Slug}
 	if existing.Slug != p.Slug {
 		tags = append(tags, "post:"+existing.Slug)
@@ -174,15 +244,20 @@ func (s *PostService) Update(ctx context.Context, id string, in PostInput, actor
 	return p, nil
 }
 
-func (s *PostService) Delete(ctx context.Context, id, actorID string) error {
-	if _, err := uuid.Parse(id); err != nil {
-		return domain.ErrNotFound
+func (s *PostService) Delete(ctx context.Context, id string, actor domain.Actor) error {
+	existing, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing.Status != domain.PostDraft && !canPublish(actor) {
+		return domain.ErrNoPermission
 	}
 	p, err := s.posts.SoftDelete(ctx, id)
 	if err != nil {
 		return err
 	}
-	s.log.Info("post deleted", "post_id", p.ID, "slug", p.Slug, "actor", actorID)
+	s.log.Info("post deleted", "post_id", p.ID, "slug", p.Slug, "actor", actor.ID)
+	s.record(ctx, actor, domain.AuditPostDelete, p, map[string]any{"status": string(p.Status)})
 	s.revalidate.Revalidate("posts", "post:"+p.Slug)
 	return nil
 }
@@ -228,9 +303,9 @@ func ValidatePostInput(in PostInput) (domain.Post, *domain.Validator) {
 		v.Add("excerpt", "คำโปรยต้องไม่เกิน 300 ตัวอักษร")
 	}
 	if !p.Status.Valid() {
-		v.Add("status", "สถานะต้องเป็น draft หรือ published")
+		v.Add("status", "สถานะต้องเป็น draft, published หรือ scheduled")
 	}
-	if p.Status == domain.PostPublished && p.BodyMarkdown == "" {
+	if p.Status != domain.PostDraft && p.BodyMarkdown == "" {
 		v.Add("body_markdown", "กรุณากรอกเนื้อหาบทความก่อนเผยแพร่")
 	}
 	if runeLen(p.BodyMarkdown) > 200_000 {
@@ -379,6 +454,10 @@ func (s *PostService) build(ctx context.Context, in PostInput, existing *domain.
 	if p.PublishedAt != nil {
 		t := p.PublishedAt.UTC()
 		p.PublishedAt = &t
+	}
+	if p.Status == domain.PostScheduled && (p.PublishedAt == nil || !p.PublishedAt.After(s.Now())) {
+		return p, &domain.ValidationError{Message: domain.MsgValidationFailed,
+			Fields: map[string]string{"published_at": MsgScheduleInPast}}
 	}
 	if in.ReadingMinutes == nil || p.ReadingMinutes == 0 {
 		p.ReadingMinutes = EstimateReadingMinutes(p.BodyMarkdown)

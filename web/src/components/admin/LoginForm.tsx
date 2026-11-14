@@ -1,21 +1,19 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { LogIn, Mail } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { LogoMark } from "@/components/ui/Logo";
 import { ApiError, rawRequest, toApiError } from "@/lib/admin/client";
-import type { SessionPayload } from "@/lib/admin/types";
-import { errorMessage, useAdmin } from "./SessionProvider";
+import { safeNext } from "@/lib/admin/next-path";
+import { AuthFrame } from "./auth/AuthFrame";
+import { PasswordInput } from "./auth/PasswordFields";
+import { errorMessage } from "./SessionProvider";
+import { Alert } from "./ui/Alert";
+import { Button } from "./ui/Button";
+import { Field, Input } from "./ui/Field";
 
-/** Only same-app admin paths; blocks //evil.com and other open redirects. */
-function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith("/admin") || raw.startsWith("//") || raw.startsWith("/admin/login")) return "/admin";
-  return /^\/admin(\/[A-Za-z0-9._~\-/]*)?$/.test(raw) ? raw : "/admin";
-}
-
+/** Public login page. Honours ?next= (same-origin /admin paths only). */
 export function LoginForm() {
-  const { status, setSession } = useAdmin();
-  const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
 
@@ -25,28 +23,31 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Already signed in (valid cookie)? Skip the form.
   useEffect(() => {
-    if (status === "authed") router.replace(next);
-  }, [status, next, router]);
+    const ctrl = new AbortController();
+    rawRequest("auth/me", { signal: ctrl.signal }, null)
+      .then((res) => {
+        if (res.ok) window.location.replace(next);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [next]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setFieldErrors({});
     const fe: Record<string, string> = {};
     if (!email.trim()) fe.email = "กรุณากรอกอีเมล";
     if (!password) fe.password = "กรุณากรอกรหัสผ่าน";
-    if (Object.keys(fe).length) {
-      setFieldErrors(fe);
-      return;
-    }
+    setFieldErrors(fe);
+    if (Object.keys(fe).length) return;
     setBusy(true);
     try {
       const res = await rawRequest("auth/login", { method: "POST", json: { email: email.trim(), password } }, null);
       if (!res.ok) throw await toApiError(res);
-      const json = (await res.json()) as { data: SessionPayload };
-      setSession(json.data);
-      router.replace(next);
+      // Hard navigation so the console layout verifies the new cookie server-side.
+      window.location.assign(next);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
@@ -71,70 +72,46 @@ export function LoginForm() {
   }
 
   return (
-    <div className="grid min-h-dvh place-items-center px-4 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <LogoMark className="h-6 w-auto" />
-          <span className="font-display font-semibold tracking-wide">ECOMACROBIZ</span>
-          <span className="adm-badge">Admin</span>
+    <AuthFrame footer={<>ลืมรหัสผ่าน? ติดต่อเจ้าของระบบ (Owner) เพื่อขอลิงก์ตั้งรหัสผ่านใหม่</>}>
+      <form onSubmit={onSubmit} noValidate className="grid gap-4" aria-describedby={error ? "login-error" : undefined}>
+        <div>
+          <h1 className="text-xl font-semibold thai-heading">เข้าสู่ระบบผู้ดูแล</h1>
+          <p className="text-sm text-muted">จัดการบทความ รายชื่อผู้ติดต่อ และทีมงาน</p>
         </div>
-        <form onSubmit={onSubmit} noValidate className="adm-card space-y-4 p-6" aria-describedby={error ? "login-error" : undefined}>
-          <div>
-            <h1 className="text-xl font-semibold thai-heading">เข้าสู่ระบบผู้ดูแล</h1>
-            <p className="text-sm text-muted">Admin sign in</p>
+        {error ? (
+          <div id="login-error">
+            <Alert>{error}</Alert>
           </div>
-          {error ? (
-            <p id="login-error" className="adm-alert" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div>
-            <label htmlFor="login-email" className="adm-label">
-              อีเมล (Email)
-            </label>
-            <input
-              id="login-email"
+        ) : null}
+        <Field label="อีเมล" error={fieldErrors.email}>
+          {(p) => (
+            <Input
+              {...p}
               type="email"
               autoComplete="username"
               inputMode="email"
-              className="adm-input"
+              icon={<Mail size={16} aria-hidden="true" />}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={fieldErrors.email ? true : undefined}
-              aria-describedby={fieldErrors.email ? "login-email-err" : undefined}
               autoFocus
             />
-            {fieldErrors.email ? (
-              <p id="login-email-err" className="adm-field-error">
-                {fieldErrors.email}
-              </p>
-            ) : null}
-          </div>
-          <div>
-            <label htmlFor="login-password" className="adm-label">
-              รหัสผ่าน (Password)
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              className="adm-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={fieldErrors.password ? true : undefined}
-              aria-describedby={fieldErrors.password ? "login-password-err" : undefined}
-            />
-            {fieldErrors.password ? (
-              <p id="login-password-err" className="adm-field-error">
-                {fieldErrors.password}
-              </p>
-            ) : null}
-          </div>
-          <button type="submit" className="adm-btn adm-btn-primary w-full" disabled={busy}>
-            {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
-          </button>
-        </form>
-      </div>
-    </div>
+          )}
+        </Field>
+        <Field label="รหัสผ่าน" error={fieldErrors.password}>
+          {(p) => <PasswordInput {...p} value={password} onChange={setPassword} autoComplete="current-password" />}
+        </Field>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          block
+          loading={busy}
+          loadingText="กำลังเข้าสู่ระบบ…"
+          icon={<LogIn size={17} aria-hidden="true" />}
+        >
+          เข้าสู่ระบบ
+        </Button>
+      </form>
+    </AuthFrame>
   );
 }

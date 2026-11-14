@@ -38,9 +38,15 @@ type Deps struct {
 	Media      *service.MediaService
 	MediaFiles storage.Opener // nil when media is not served by this process
 
+	Users   *service.UserService
+	Account *service.AccountService
+	Audit   *service.AuditService
+
 	ContactLimiter    *ratelimit.Limiter
 	LoginIPLimiter    *ratelimit.Limiter
 	LoginEmailLimiter *ratelimit.Limiter
+	// TokenLimiter: per-IP limit on the public invite/reset token endpoints.
+	TokenLimiter *ratelimit.Limiter
 }
 
 type handler struct{ Deps }
@@ -91,19 +97,10 @@ func NewRouter(d Deps) (*gin.Engine, error) {
 	admin.POST("/auth/login", middleware.BodyLimit(smallBodyLimit), middleware.RequireOrigin(cors), h.login)
 
 	authed := admin.Group("", middleware.RequireSession(d.Auth, d.Log), middleware.RequireCSRF(cors))
-	authed.POST("/auth/logout", h.logout)
-	authed.GET("/auth/me", h.me)
-	authed.GET("/categories", h.listCategories)
-	authed.GET("/posts", h.adminListPosts)
-	authed.GET("/posts/:id", h.adminGetPost)
-	authed.POST("/posts", middleware.BodyLimit(postBodyLimit), h.adminCreatePost)
-	authed.PUT("/posts/:id", middleware.BodyLimit(postBodyLimit), h.adminUpdatePost)
-	authed.DELETE("/posts/:id", h.adminDeletePost)
-	authed.POST("/media", middleware.BodyLimit(d.Media.MaxBytes()+(1<<20)), h.uploadMedia)
-	authed.GET("/leads", h.listLeads)
-	authed.GET("/leads/export.csv", h.exportLeads)
-	authed.GET("/leads/:id", h.getLead)
-	authed.PATCH("/leads/:id", middleware.BodyLimit(smallBodyLimit), h.updateLead)
+	// Every authed route MUST carry RequirePerm / RequireAnyPerm / AnyAuthenticated
+	// (asserted by the RBAC matrix test).
+	h.registerAuthRoutes(admin, authed) // routes_auth.go: auth, account, users, invites, audit, settings
+	h.registerContentRoutes(authed)     // routes_content.go: dashboard, posts, media, leads
 	return r, nil
 }
 

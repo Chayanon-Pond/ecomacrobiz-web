@@ -2,7 +2,9 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import type { PageMeta } from "@/lib/admin/types";
+import { Pagination as UiPagination } from "./ui/Pagination";
 
 /** status / q / page kept in the URL so filters survive reloads and back/forward. */
 export function useListParams(defaultStatus = "") {
@@ -49,6 +51,8 @@ export function SearchBox({ value, onSearch, label }: { value: string; onSearch:
       <label className="sr-only" htmlFor="adm-search">
         {label}
       </label>
+      <span className="adm-input-wrap block">
+        <Search size={16} aria-hidden="true" />
       <input
         id="adm-search"
         type="search"
@@ -60,32 +64,12 @@ export function SearchBox({ value, onSearch, label }: { value: string; onSearch:
           if (e.key === "Enter") onSearch(draft.trim());
         }}
       />
+      </span>
     </div>
   );
 }
 
+/** Kept for older callers; delegates to the UI kit pagination. */
 export function Pagination({ meta, onPage }: { meta: PageMeta | null; onPage: (p: number) => void }) {
-  if (!meta || meta.total_pages <= 1) {
-    return meta ? <p className="mt-3 text-sm text-muted">ทั้งหมด {meta.total} รายการ</p> : null;
-  }
-  return (
-    <nav aria-label="เปลี่ยนหน้า" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-      <p className="text-muted">
-        หน้า {meta.page} / {meta.total_pages} · ทั้งหมด {meta.total} รายการ
-      </p>
-      <div className="flex gap-2">
-        <button type="button" className="adm-btn adm-btn-sm" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)}>
-          ← ก่อนหน้า
-        </button>
-        <button
-          type="button"
-          className="adm-btn adm-btn-sm"
-          disabled={meta.page >= meta.total_pages}
-          onClick={() => onPage(meta.page + 1)}
-        >
-          ถัดไป →
-        </button>
-      </div>
-    </nav>
-  );
+  return <UiPagination meta={meta} onPage={onPage} />;
 }

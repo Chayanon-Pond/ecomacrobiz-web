@@ -102,25 +102,26 @@ func toPost(p domain.Post, admin bool) postDTO {
 }
 
 type leadDTO struct {
-	ID               string    `json:"id"`
-	FirstName        string    `json:"first_name"`
-	LastName         string    `json:"last_name"`
-	Company          string    `json:"company"`
-	LineID           string    `json:"line_id"`
-	Phone            string    `json:"phone"`
-	Email            string    `json:"email"`
-	PreferredChannel string    `json:"preferred_channel"`
-	PreferredDate    *string   `json:"preferred_date"`
-	PreferredTime    *string   `json:"preferred_time"`
-	Message          string    `json:"message"`
-	ConsentAt        time.Time `json:"consent_at"`
-	Status           string    `json:"status"`
-	Note             string    `json:"note"`
-	SourcePage       string    `json:"source_page"`
-	IP               string    `json:"ip"`
-	UserAgent        string    `json:"user_agent"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               string      `json:"id"`
+	FirstName        string      `json:"first_name"`
+	LastName         string      `json:"last_name"`
+	Company          string      `json:"company"`
+	LineID           string      `json:"line_id"`
+	Phone            string      `json:"phone"`
+	Email            string      `json:"email"`
+	PreferredChannel string      `json:"preferred_channel"`
+	PreferredDate    *string     `json:"preferred_date"`
+	PreferredTime    *string     `json:"preferred_time"`
+	Message          string      `json:"message"`
+	ConsentAt        time.Time   `json:"consent_at"`
+	Status           string      `json:"status"`
+	Note             string      `json:"note"`
+	SourcePage       string      `json:"source_page"`
+	IP               string      `json:"ip"`
+	UserAgent        string      `json:"user_agent"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+	AssignedTo       *userRefDTO `json:"assigned_to"`
 }
 
 func strPtr(s string) *string {
@@ -137,6 +138,7 @@ func toLead(l domain.Lead) leadDTO {
 		PreferredDate: strPtr(l.PreferredDate), PreferredTime: strPtr(l.PreferredTime), Message: l.Message,
 		ConsentAt: l.ConsentAt.UTC(), Status: string(l.Status), Note: l.Note, SourcePage: l.SourcePage, IP: l.IP,
 		UserAgent: l.UserAgent, CreatedAt: l.CreatedAt.UTC(), UpdatedAt: l.UpdatedAt.UTC(),
+		AssignedTo: toUserRef(l.AssignedTo),
 	}
 }
 
@@ -156,11 +158,17 @@ type userDTO struct {
 
 func toUser(u domain.AdminUser) userDTO { return userDTO{ID: u.ID, Email: u.Email, Name: u.Name} }
 
-type mediaDTO struct {
-	ID     string `json:"id"`
-	URL    string `json:"url"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	Mime   string `json:"mime"`
-	Size   int64  `json:"size"`
+// userRefDTO is the shared short user form (CONTRACT "UserRef").
+type userRefDTO struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// toUserRef returns nil for a nil ref (JSON null).
+func toUserRef(r *domain.UserRef) *userRefDTO {
+	if r == nil {
+		return nil
+	}
+	return &userRefDTO{ID: r.ID, Name: r.Name, Email: r.Email}
 }

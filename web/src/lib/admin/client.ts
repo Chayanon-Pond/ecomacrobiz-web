@@ -5,7 +5,13 @@
 
 export const ADMIN_API = "/api/admin";
 
+/** domain.MsgNoPermission: a 403 for a missing permission (other 403s are CSRF/origin). */
+export const MSG_NO_PERMISSION = "บัญชีของคุณไม่มีสิทธิ์ดำเนินการนี้ กรุณาติดต่อผู้ดูแลระบบ (Owner)";
+
 export class ApiError extends Error {
+  /** Set when the session layer already showed a toast for this error. */
+  notified = false;
+
   constructor(
     public status: number,
     public code: string,

@@ -48,6 +48,7 @@ export function formatDateTime(iso: string | null | undefined): string {
 export const POST_STATUS_LABEL: Record<PostStatus, string> = {
   draft: "ฉบับร่าง",
   published: "เผยแพร่แล้ว",
+  scheduled: "ตั้งเวลาไว้",
 };
 
 export const LEAD_STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "closed", "spam"];

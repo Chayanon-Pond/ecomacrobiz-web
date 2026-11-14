@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -14,14 +13,8 @@ import { PostCard } from "@/components/knowledge/PostCard";
 import { ReadingProgress } from "@/components/knowledge/ReadingProgress";
 import { ShareButtons } from "@/components/knowledge/ShareButtons";
 import { TableOfContents } from "@/components/knowledge/TableOfContents";
-import {
-  categoryHref,
-  formatThaiDate,
-  isLocalImage,
-  postHref,
-  readingLabel,
-  sameThaiDay,
-} from "@/components/knowledge/format";
+import { ArticleCover, ArticleHeader } from "@/components/knowledge/ArticleParts";
+import { categoryHref, postHref } from "@/components/knowledge/format";
 import "@/components/knowledge/knowledge.css";
 
 type Params = Promise<{ slug: string }>;
@@ -97,7 +90,6 @@ async function Article({ params }: { params: Params }) {
   const path = postHref(post.slug);
   const url = absUrl(path);
   const primary = post.categories[0];
-  const updated = !sameThaiDay(post.publishedAt, post.updatedAt);
 
   return (
     <>
@@ -123,112 +115,9 @@ async function Article({ params }: { params: Params }) {
       <ReadingProgress targetId="article-body" />
 
       <article aria-labelledby="article-title" className="kn-article">
-        <header className="relative isolate overflow-hidden pt-[calc(var(--header-h)+clamp(2rem,7vh,4.5rem))]">
-          <div
-            aria-hidden="true"
-            className="absolute -top-1/3 left-1/2 -z-10 size-[min(120vw,60rem)] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgb(15_52_255/0.28),transparent_62%)]"
-          />
-          <div className="container-page">
-            <nav aria-label="เส้นทางนำทาง" className="mb-8">
-              <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-subtle">
-                <li>
-                  <Link href="/" className="hover:text-fg">หน้าแรก</Link>
-                </li>
-                <li aria-hidden="true">/</li>
-                <li>
-                  <Link href={knowledgePage.path} className="hover:text-fg">{knowledgePage.title}</Link>
-                </li>
-                {primary && (
-                  <>
-                    <li aria-hidden="true">/</li>
-                    <li>
-                      <Link href={categoryHref(primary.slug)} className="hover:text-fg">{primary.nameTh}</Link>
-                    </li>
-                  </>
-                )}
-              </ol>
-            </nav>
+        <ArticleHeader post={post} />
 
-            {post.categories.length > 0 && (
-              <ul className="mb-6 flex flex-wrap gap-2" aria-label="หมวดหมู่">
-                {post.categories.map((c) => (
-                  <li key={c.slug}>
-                    <Link
-                      href={categoryHref(c.slug)}
-                      className="inline-flex min-h-9 items-center rounded-full border border-accent/50 bg-accent/10 px-3.5 font-display text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-accent-soft transition-colors hover:border-accent-soft"
-                    >
-                      {c.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <h1
-              id="article-title"
-              className="thai-heading max-w-5xl text-balance-safe text-[clamp(2rem,4.8vw,4rem)] font-semibold leading-[1.28]"
-            >
-              {post.title}
-            </h1>
-            {/* A truncated card excerpt ("…") reads badly as a lead; skip it. */}
-            {post.excerpt && !post.excerpt.endsWith("…") && (
-              <p className="mt-6 max-w-3xl text-[clamp(1.05rem,1.5vw,1.25rem)] leading-[1.85] text-muted">
-                {post.excerpt}
-              </p>
-            )}
-
-            <dl className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-subtle">
-              <div>
-                <dt className="sr-only">ผู้เขียน</dt>
-                <dd className="flex items-center gap-3 text-fg">
-                  <span
-                    aria-hidden="true"
-                    className="grid size-9 place-items-center rounded-full bg-accent font-display text-sm font-semibold text-white"
-                  >
-                    {post.author.trim().charAt(0).toUpperCase()}
-                  </span>
-                  {post.author}
-                </dd>
-              </div>
-              <div className="flex gap-1.5">
-                <dt>เผยแพร่</dt>
-                <dd>
-                  <time dateTime={post.publishedAt}>{formatThaiDate(post.publishedAt, "long")}</time>
-                </dd>
-              </div>
-              {updated && (
-                <div className="flex gap-1.5">
-                  <dt>อัปเดต</dt>
-                  <dd>
-                    <time dateTime={post.updatedAt}>{formatThaiDate(post.updatedAt, "long")}</time>
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt className="sr-only">เวลาอ่าน</dt>
-                <dd>{readingLabel(post.readingMinutes)}</dd>
-              </div>
-            </dl>
-          </div>
-        </header>
-
-        {post.cover && (
-          <figure className="container-page mt-[clamp(2rem,5vh,3.5rem)]">
-            <div className="overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
-              <Image
-                src={post.cover.src}
-                alt={post.cover.alt}
-                width={post.cover.width}
-                height={post.cover.height}
-                priority
-                quality={85}
-                sizes="(min-width: 1440px) 1344px, 94vw"
-                unoptimized={!isLocalImage(post.cover.src)}
-                className="h-auto max-h-[78svh] w-full object-cover"
-              />
-            </div>
-          </figure>
-        )}
+        <ArticleCover cover={post.cover} />
 
         <div
           className={`container-page mt-[clamp(2.5rem,7vh,5rem)] grid gap-10 pb-[clamp(4rem,10vh,7rem)] ${
