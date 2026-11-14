@@ -31,6 +31,13 @@ type Store struct {
 	Tokens     *PGUserTokens
 	Audit      *PGAuditLogs
 	Redirects  *PGRedirects
+
+	Members        *PGMembers
+	MemberSessions *PGMemberSessions
+	MemberTokens   *PGMemberTokens
+	OAuthStates    *PGOAuthStates
+	Comments       *PGComments
+	Engagement     *PGEngagement
 }
 
 func NewStore(db DB) *Store {
@@ -44,6 +51,13 @@ func NewStore(db DB) *Store {
 		Tokens:     &PGUserTokens{db: db},
 		Audit:      &PGAuditLogs{db: db},
 		Redirects:  &PGRedirects{db: db},
+
+		Members:        &PGMembers{db: db},
+		MemberSessions: &PGMemberSessions{db: db},
+		MemberTokens:   &PGMemberTokens{db: db},
+		OAuthStates:    &PGOAuthStates{db: db},
+		Comments:       &PGComments{db: db},
+		Engagement:     &PGEngagement{db: db},
 	}
 }
 

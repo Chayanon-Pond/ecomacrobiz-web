@@ -62,6 +62,9 @@ type env struct {
 	cfg   *config.Config
 	db    *pinger
 	mail  *recMail
+	oidc  *testOIDC
+	disk  *storage.LocalDisk
+	comm  communityDeps
 }
 
 type recMail struct {
@@ -76,15 +79,20 @@ func (m *recMail) Send(to, _, _ string) bool {
 	return true
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// newEnvWith overrides individual environment variables of the test config.
+func newEnvWith(t *testing.T, override map[string]string) *env {
 	t.Helper()
-	cfg, err := config.LoadFrom(func(k string) string {
-		return map[string]string{
-			"CORS_ALLOWED_ORIGINS": webOrigin, "TRUSTED_PROXIES": proxyIP, "COOKIE_SECURE": "true",
-			"PUBLIC_BASE_URL": "http://api.test", "CONTACT_RATE_LIMIT": "3/10m", "LOGIN_RATE_LIMIT": "4/15m",
-			"WEB_BASE_URL": "https://www.example.test",
-		}[k]
-	})
+	vars := map[string]string{
+		"CORS_ALLOWED_ORIGINS": webOrigin, "TRUSTED_PROXIES": proxyIP, "COOKIE_SECURE": "true",
+		"PUBLIC_BASE_URL": "http://api.test", "CONTACT_RATE_LIMIT": "3/10m", "LOGIN_RATE_LIMIT": "4/15m",
+		"WEB_BASE_URL": "https://www.example.test", "MEMBER_LOGIN_RATE_LIMIT": "5/15m", "COMMENT_RATE_LIMIT": "4/1m",
+	}
+	for k, v := range override {
+		vars[k] = v
+	}
+	cfg, err := config.LoadFrom(func(k string) string { return vars[k] })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +113,7 @@ func newEnv(t *testing.T) *env {
 	db := &pinger{}
 	redirects := service.NewRedirectService(store.RedirectsRepo(), store.PostsRepo(), rv, audit, discard)
 	redirects.SetSiteBaseURL(cfg.WebBaseURL)
+	comm := newCommunityDeps(t, cfg, store, disk, rv, audit)
 	r, err := NewRouter(Deps{
 		Config: cfg, Log: discard, DB: db,
 		Posts:     service.NewPostService(store.PostsRepo(), store.CategoriesRepo(), store.MediaRepo(), redirects, rv, audit, discard),
@@ -122,11 +131,14 @@ func newEnv(t *testing.T) *env {
 			service.UserServiceConfig{InviteTTL: cfg.InviteTTL, WebBaseURL: cfg.WebBaseURL}, discard),
 		Account: service.NewAccountService(store.AdminUsersRepo(), store.SessionsRepo(), auth, audit, discard),
 		Audit:   audit,
+		Members: comm.members, Google: comm.google, Comments: comm.comments, Engagement: comm.engagement,
+		CommunityLimits: comm.limits,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, r: r, store: store, rv: rv, cfg: cfg, db: db, mail: mail}
+	return &env{t: t, r: r, store: store, rv: rv, cfg: cfg, db: db, mail: mail, oidc: comm.oidc, disk: disk,
+		comm: comm}
 }
 
 type reqOpt func(*http.Request)

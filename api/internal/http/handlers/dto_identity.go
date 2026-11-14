@@ -150,15 +150,16 @@ type lineOverviewDTO struct {
 
 // settingsDTO: GET /settings/overview. Never secrets or recipient addresses.
 type settingsDTO struct {
-	AppEnv                   string           `json:"app_env"`
-	PublicBaseURL            string           `json:"public_base_url"`
-	WebBaseURL               string           `json:"web_base_url"`
-	RevalidateWebhook        bool             `json:"revalidate_webhook"`
-	Email                    emailOverviewDTO `json:"email"`
-	Line                     lineOverviewDTO  `json:"line"`
-	SessionTTLHours          float64          `json:"session_ttl_hours"`
-	InviteTTLHours           float64          `json:"invite_ttl_hours"`
-	MaxUploadMB              int64            `json:"max_upload_mb"`
-	SchedulerIntervalSeconds float64          `json:"scheduler_interval_seconds"`
-	MigrateOnStart           bool             `json:"migrate_on_start"`
+	AppEnv                   string             `json:"app_env"`
+	PublicBaseURL            string             `json:"public_base_url"`
+	WebBaseURL               string             `json:"web_base_url"`
+	RevalidateWebhook        bool               `json:"revalidate_webhook"`
+	Email                    emailOverviewDTO   `json:"email"`
+	Line                     lineOverviewDTO    `json:"line"`
+	SessionTTLHours          float64            `json:"session_ttl_hours"`
+	InviteTTLHours           float64            `json:"invite_ttl_hours"`
+	MaxUploadMB              int64              `json:"max_upload_mb"`
+	SchedulerIntervalSeconds float64            `json:"scheduler_interval_seconds"`
+	MigrateOnStart           bool               `json:"migrate_on_start"`
+	Members                  membersOverviewDTO `json:"members"`
 }

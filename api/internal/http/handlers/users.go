@@ -124,6 +124,12 @@ func (h *handler) settingsOverview(c *gin.Context) {
 	if p := cfg.EmailProvider(); p != "" {
 		email = emailOverviewDTO{Configured: true, Provider: &p, Recipients: len(cfg.SMTPTo)}
 	}
+	members := membersOverviewDTO{DataKeyIDs: []int16{}}
+	if h.Members != nil {
+		members = membersOverviewDTO{GoogleEnabled: h.Google != nil, RequireVerifiedEmail: h.Members.RequireVerified(),
+			HoldFirstComment: cfg.Members.HoldFirstComment, TurnstileEnabled: h.Members.TurnstileEnabled(),
+			DataKeyIDs: h.Members.KeyIDs()}
+	}
 	respond.Data(c, http.StatusOK, settingsDTO{
 		AppEnv:                   cfg.AppEnv,
 		PublicBaseURL:            cfg.PublicBaseURL,
@@ -136,5 +142,6 @@ func (h *handler) settingsOverview(c *gin.Context) {
 		MaxUploadMB:              cfg.MaxUploadBytes >> 20,
 		SchedulerIntervalSeconds: cfg.SchedulerInterval.Seconds(),
 		MigrateOnStart:           cfg.MigrateOnStart,
+		Members:                  members,
 	})
 }

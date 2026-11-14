@@ -173,7 +173,7 @@ func TestInviteAcceptHTTP(t *testing.T) {
 		"name": "บรรณาธิการ", "password": "a-strong-password"})
 	env = expect(t, w, 200)
 	s, me := sessionFrom(t, w, env)
-	if me.User.Email != "new@example.com" || me.User.Role != "editor" || len(me.Permissions) != 5 {
+	if me.User.Email != "new@example.com" || me.User.Role != "editor" || len(me.Permissions) != 6 { // incl. comments:moderate
 		t.Fatalf("accept me: %+v", me)
 	}
 	expect(t, e.do("GET", "/api/v1/admin/posts", nil, withCookie(s.cookie)), 200)
