@@ -141,7 +141,7 @@ export function SlugField({
       </div>
       {publishedSlug && slug !== publishedSlug ? (
         <p className="adm-hint" data-warn="true">
-          บทความนี้เผยแพร่แล้วที่ /knowledge/{publishedSlug} — เมื่อเปลี่ยน slug ลิงก์เดิมจะถูกส่งต่อ (legacy slug) ตามที่ API รองรับ
+          บทความนี้เผยแพร่แล้วที่ /knowledge/{publishedSlug} — เมื่อบันทึก URL เดิมจะ redirect (301) มาที่ URL ใหม่โดยอัตโนมัติ ลิงก์และอันดับใน Google เดิมจึงไม่เสีย
         </p>
       ) : null}
     </div>
@@ -150,17 +150,29 @@ export function SlugField({
 
 /* ---------------- cover ---------------- */
 
+const COVER_TEXT = {
+  empty: "เลือกรูปปก (แนะนำ 1600×900 px ขึ้นไป)",
+  picker: "เลือกรูปปก",
+  uploaded: "อัปโหลดรูปปกแล้ว — อย่าลืมกรอกคำอธิบายรูป",
+  alt: "คำอธิบายรูปปก (Alt text)",
+  preview: "ตัวอย่างรูปปก",
+};
+
 export function CoverPicker({
   cover,
   error,
   altError,
   disabled,
+  text = COVER_TEXT,
+  altRequired = true,
   onChange,
 }: {
   cover: Cover | null;
   error?: string;
   altError?: string;
   disabled?: boolean;
+  text?: typeof COVER_TEXT;
+  altRequired?: boolean;
   /** mediaId undefined = keep the current one (alt text edits). */
   onChange: (cover: Cover | null, mediaId?: string | null) => void;
 }) {
@@ -180,7 +192,7 @@ export function CoverPicker({
     try {
       const m = await upload(file, { onProgress: setProgress });
       fromMedia(m);
-      toast.success("อัปโหลดรูปปกแล้ว — อย่าลืมกรอกคำอธิบายรูป");
+      toast.success(text.uploaded);
     } catch (err) {
       if (!alreadyNotified(err)) toast.error(errorMessage(err) || "อัปโหลดไม่สำเร็จ");
     } finally {
@@ -193,18 +205,18 @@ export function CoverPicker({
       {cover ? (
         <div className="pe-cover">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={cover.url} alt={cover.alt || "ตัวอย่างรูปปก"} width={cover.width || undefined} height={cover.height || undefined} />
+          <img src={cover.url} alt={cover.alt || text.preview} width={cover.width || undefined} height={cover.height || undefined} />
         </div>
       ) : progress !== null ? (
         <Skeleton className="pe-cover" />
       ) : (
         <button type="button" className="pe-cover pe-cover-empty" disabled={disabled} onClick={() => setPickerOpen(true)}>
           <ImagePlus size={22} aria-hidden="true" />
-          <span>เลือกรูปปก (แนะนำ 1600×900 px ขึ้นไป)</span>
+          <span>{text.empty}</span>
         </button>
       )}
       {progress !== null ? (
-        <div className="md-progress" role="progressbar" aria-label="อัปโหลดรูปปก" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+        <div className="md-progress" role="progressbar" aria-label={text.picker} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
           <span style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       ) : null}
@@ -237,7 +249,7 @@ export function CoverPicker({
       ) : null}
       {error ? <p className="adm-field-error">{error}</p> : null}
       {cover ? (
-        <Field label="คำอธิบายรูปปก (Alt text)" required error={altError} hint={`${[...cover.alt].length}/${LIMITS.alt} · อธิบายภาพเป็นภาษาไทย`}>
+        <Field label={text.alt} required={altRequired} error={altError} hint={`${[...cover.alt].length}/${LIMITS.alt} · อธิบายภาพเป็นภาษาไทย`}>
           {(p) => (
             <Input {...p} value={cover.alt} disabled={disabled} onChange={(e) => onChange({ ...cover, alt: e.target.value })} />
           )}
@@ -245,7 +257,7 @@ export function CoverPicker({
       ) : null}
       <MediaPickerDialog
         open={pickerOpen}
-        title="เลือกรูปปก"
+        title={text.picker}
         onClose={() => setPickerOpen(false)}
         onPick={(m) => {
           setPickerOpen(false);

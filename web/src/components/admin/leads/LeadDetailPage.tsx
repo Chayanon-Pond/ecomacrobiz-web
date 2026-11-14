@@ -3,12 +3,12 @@
 /** /admin/leads/[id] — full-page view of the same panel used in the leads drawer. */
 import { ArrowLeft } from "lucide-react";
 import { useParams } from "next/navigation";
-import { LeadPanel } from "./leads/LeadPanel";
-import { useAdmin } from "./SessionProvider";
-import { ButtonLink } from "./ui/Button";
-import { NoAccess } from "./ui/EmptyState";
+import { LeadPanel } from "./LeadPanel";
+import { useAdmin } from "../SessionProvider";
+import { ButtonLink } from "../ui/Button";
+import { NoAccess } from "../ui/EmptyState";
 
-export function LeadDetail() {
+export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { can } = useAdmin();
   return (

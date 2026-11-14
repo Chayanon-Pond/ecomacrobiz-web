@@ -321,6 +321,10 @@ html[data-adm-sidebar="collapsed"] .adm-sidebar {
   font: inherit;
   font-size: 0.975rem;
 }
+/* The open palette is the focus context; a ring on its only input just clips against the dialog edge. */
+.adm-cmdk-input input:focus-visible {
+  outline: none;
+}
 .adm-cmdk-input input::placeholder {
   color: var(--subtle);
 }

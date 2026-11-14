@@ -403,6 +403,8 @@ a.adm-card-link:hover {
   gap: 0.25rem;
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 .adm-tablist button {
   position: relative;
@@ -418,12 +420,16 @@ a.adm-card-link:hover {
 .adm-tablist button[aria-selected="true"] {
   color: var(--fg);
 }
+/* The list clips overflow (horizontal scroll), so draw the ring inside the tab. */
+.adm-tablist button:focus-visible {
+  outline-offset: -2px;
+}
 .adm-tablist button[aria-selected="true"]::after {
   content: "";
   position: absolute;
   left: 0.5rem;
   right: 0.5rem;
-  bottom: -1px;
+  bottom: 0;
   height: 2px;
   border-radius: 2px;
   background: var(--accent);

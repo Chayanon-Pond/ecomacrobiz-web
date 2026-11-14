@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LoginForm } from "@/components/admin/LoginForm";
+import { LoginForm } from "@/components/admin/auth/LoginForm";
 
 export const metadata: Metadata = { title: "เข้าสู่ระบบ" };
 // Client-rendered behind the session check: nothing to prerender for instant navigation.

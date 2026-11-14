@@ -3,6 +3,7 @@ import {
   FileText,
   Image as ImageIcon,
   LayoutDashboard,
+  Shuffle,
   Settings,
   UserCog,
   Users,
@@ -34,6 +35,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/posts", label: "บทความ", en: "Posts", icon: FileText, anyOf: ["posts:read"], keywords: "blog knowledge" },
       { href: "/admin/media", label: "คลังสื่อ", en: "Media", icon: ImageIcon, anyOf: ["media:read"], keywords: "รูปภาพ image upload" },
+      { href: "/admin/redirects", label: "เปลี่ยนเส้นทาง URL", en: "Redirects", icon: Shuffle, anyOf: ["posts:read"], keywords: "seo 301 410 url เปลี่ยนเส้นทาง ลิงก์เสีย" },
     ],
   },
   {
@@ -59,6 +61,7 @@ export function isActive(pathname: string, href: string): boolean {
 const SEGMENT_LABEL: Record<string, string> = {
   posts: "บทความ",
   media: "คลังสื่อ",
+  redirects: "เปลี่ยนเส้นทาง URL",
   leads: "รายชื่อผู้ติดต่อ",
   users: "ผู้ใช้และสิทธิ์",
   audit: "บันทึกกิจกรรม",

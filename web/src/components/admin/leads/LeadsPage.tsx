@@ -12,27 +12,23 @@ import { downloadResponse, toApiError } from "@/lib/admin/client";
 import { CHANNEL_LABEL, formatDateTime, LEAD_STATUSES } from "@/lib/admin/format";
 import { formatRelative } from "@/lib/admin/time";
 import type { Lead, LeadBoard, LeadStatus, ListResponse, PageMeta } from "@/lib/admin/types";
-import { LeadPanel } from "./leads/LeadPanel";
-import { LeadsBoardView, moveInBoard } from "./leads/LeadsBoard";
-import { leadName, preferredSlot, userLabel } from "./leads/lead-utils";
-import { SearchBox } from "./ListControls";
-import { alreadyNotified, errorMessage, useAdmin } from "./SessionProvider";
-import { PREF_KEYS, usePref } from "./shell/prefs";
-import { LEAD_STATUS_SHORT, LeadStatusBadge } from "./ui/Badge";
-import { Button } from "./ui/Button";
-import { Drawer } from "./ui/Drawer";
-import { EmptyState, ErrorState, NoAccess } from "./ui/EmptyState";
-import { Input, Select } from "./ui/Field";
-import { PageHeader } from "./ui/PageHeader";
-import { Pagination } from "./ui/Pagination";
-import { Skeleton, TableSkeleton } from "./ui/Skeleton";
-import { Table } from "./ui/Table";
-import { SegmentedControl } from "./ui/Tabs";
-import { useToast } from "./ui/Toast";
-
-export { leadName, preferredSlot };
-/** @deprecated use LEAD_STATUS_TONE from ./ui/Badge */
-export const LEAD_TONE: Record<LeadStatus, string> = { new: "blue", contacted: "amber", qualified: "green", closed: "", spam: "red" };
+import { LeadPanel } from "./LeadPanel";
+import { LeadsBoardView, moveInBoard } from "./LeadsBoard";
+import { leadName, preferredSlot, userLabel } from "./lead-utils";
+import { SearchBox } from "../ui/SearchBox";
+import { alreadyNotified, errorMessage, useAdmin } from "../SessionProvider";
+import { PREF_KEYS, usePref } from "../shell/prefs";
+import { LEAD_STATUS_SHORT, LeadStatusBadge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { Drawer } from "../ui/Drawer";
+import { EmptyState, ErrorState, NoAccess } from "../ui/EmptyState";
+import { Input, Select } from "../ui/Field";
+import { PageHeader } from "../ui/PageHeader";
+import { Pagination } from "../ui/Pagination";
+import { Skeleton, TableSkeleton } from "../ui/Skeleton";
+import { Table } from "../ui/Table";
+import { SegmentedControl } from "../ui/Tabs";
+import { useToast } from "../ui/Toast";
 
 const PER_PAGE = 25;
 const VIEWS = ["table", "board"] as const;
@@ -71,7 +67,7 @@ function useLeadParams() {
   return { f, set };
 }
 
-export function LeadsList() {
+export function LeadsPage() {
   const { request, requestRaw, can } = useAdmin();
   const toast = useToast();
   const { f, set } = useLeadParams();

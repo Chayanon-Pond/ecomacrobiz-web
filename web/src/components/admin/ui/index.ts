@@ -22,6 +22,7 @@ export { Field, Input, Select, Textarea, type FieldControlProps } from "./Field"
 export { Menu, type MenuItem } from "./Menu";
 export { PageHeader } from "./PageHeader";
 export { Pagination } from "./Pagination";
+export { SearchBox } from "./SearchBox";
 export { Skeleton, SkeletonText, TableSkeleton } from "./Skeleton";
 export { Spinner } from "./Spinner";
 export { Delta, StatCard, pctChange } from "./Stat";

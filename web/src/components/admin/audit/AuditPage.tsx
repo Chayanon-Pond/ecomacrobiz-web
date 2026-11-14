@@ -37,6 +37,7 @@ const TARGET_LABEL: Record<string, string> = {
   user: "ผู้ใช้",
   invite: "คำเชิญ",
   session: "เซสชัน",
+  redirect: "Redirect",
 };
 
 export function AuditPage() {
@@ -63,7 +64,6 @@ export function AuditPage() {
       const s = next.toString();
       router.replace(`${pathname}${s ? `?${s}` : ""}`, { scroll: false });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [sp, router, pathname],
   );
 

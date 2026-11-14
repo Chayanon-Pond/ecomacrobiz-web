@@ -5,12 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, rawRequest, toApiError } from "@/lib/admin/client";
 import { safeNext } from "@/lib/admin/next-path";
-import { AuthFrame } from "./auth/AuthFrame";
-import { PasswordInput } from "./auth/PasswordFields";
-import { errorMessage } from "./SessionProvider";
-import { Alert } from "./ui/Alert";
-import { Button } from "./ui/Button";
-import { Field, Input } from "./ui/Field";
+import { AuthFrame } from "./AuthFrame";
+import { PasswordInput } from "./PasswordFields";
+import { errorMessage } from "../SessionProvider";
+import { Alert } from "../ui/Alert";
+import { Button } from "../ui/Button";
+import { Field, Input } from "../ui/Field";
 
 /** Public login page. Honours ?next= (same-origin /admin paths only). */
 export function LoginForm() {

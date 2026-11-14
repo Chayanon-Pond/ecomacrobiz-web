@@ -6,11 +6,12 @@ import { bangkokInputToIso, isoToBangkokInput, SLUG_RE } from "@/lib/admin/forma
 import type { Cover, Post, PostInput, PostStatus } from "@/lib/admin/types";
 
 /** Limits enforced by the API (api/internal/service/posts.go). */
-export const LIMITS = { title: 200, excerpt: 300, author: 100, seoTitle: 200, seoDescription: 400, alt: 300 } as const;
+export const LIMITS = { title: 200, excerpt: 300, author: 100, seoTitle: 200, seoDescription: 400, alt: 300, focusKeyword: 100, canonical: 2000 } as const;
 /** Recommended ranges shown next to the counters. */
 export const RECOMMENDED = {
-  seoTitle: [30, 60] as const,
-  seoDescription: [70, 160] as const,
+  /** Without the " | ECOMACROBIZ" suffix (14 chars) the site appends: ~50–60 in total. */
+  seoTitle: [35, 46] as const,
+  seoDescription: [120, 160] as const,
   excerpt: [80, 200] as const,
 };
 
@@ -30,6 +31,12 @@ export type PostForm = {
   seo_description: string;
   cover: Cover | null;
   cover_media_id: string | null;
+  focus_keyword: string;
+  canonical_url: string;
+  noindex: boolean;
+  /** Social share image override (null = use the cover / auto image). */
+  og_image: Cover | null;
+  og_media_id: string | null;
 };
 
 export const EMPTY_FORM: PostForm = {
@@ -46,6 +53,11 @@ export const EMPTY_FORM: PostForm = {
   seo_description: "",
   cover: null,
   cover_media_id: null,
+  focus_keyword: "",
+  canonical_url: "",
+  noindex: false,
+  og_image: null,
+  og_media_id: null,
 };
 
 export function formFromPost(p: Post): PostForm {
@@ -63,6 +75,11 @@ export function formFromPost(p: Post): PostForm {
     seo_description: p.seo_description ?? "",
     cover: p.cover ? { ...p.cover, alt: p.cover.alt ?? "" } : null,
     cover_media_id: p.cover_media_id ?? null,
+    focus_keyword: p.focus_keyword ?? "",
+    canonical_url: p.canonical_url ?? "",
+    noindex: Boolean(p.noindex),
+    og_image: p.og_image ? { ...p.og_image, alt: p.og_image.alt ?? "" } : null,
+    og_media_id: p.og_media_id ?? null,
   };
 }
 
@@ -82,6 +99,11 @@ export function toInput(f: PostForm): PostInput {
     reading_minutes: null,
     seo_title: f.seo_title.trim(),
     seo_description: f.seo_description.trim(),
+    focus_keyword: f.focus_keyword.trim(),
+    canonical_url: f.canonical_url.trim(),
+    noindex: f.noindex,
+    og_image: f.og_image ? { ...f.og_image, alt: f.og_image.alt.trim() } : null,
+    og_media_id: f.og_image ? f.og_media_id : null,
   };
   // null keeps the stored date on update; published without a date = now (API).
   out.published_at = bangkokInputToIso(f.published_at);
@@ -110,6 +132,10 @@ export function validateForm(f: PostForm, now: number): Record<string, string> {
     if (!f.cover.alt.trim()) e.cover_alt = "กรุณากรอกคำอธิบายรูปปก (alt text)";
     else if (runes(f.cover.alt.trim()) > LIMITS.alt) e.cover_alt = `คำอธิบายรูปยาวเกิน ${LIMITS.alt} ตัวอักษร`;
   }
+  if (runes(f.focus_keyword.trim()) > LIMITS.focusKeyword) e.focus_keyword = `คีย์เวิร์ดยาวเกิน ${LIMITS.focusKeyword} ตัวอักษร`;
+  const canonical = canonicalError(f.canonical_url);
+  if (canonical) e.canonical_url = canonical;
+  if (f.og_image && runes(f.og_image.alt.trim()) > LIMITS.alt) e.og_image_alt = `คำอธิบายรูปยาวเกิน ${LIMITS.alt} ตัวอักษร`;
   if (f.published_at && !bangkokInputToIso(f.published_at)) e.published_at = "รูปแบบวันเวลาไม่ถูกต้อง";
   if (f.status === "scheduled") {
     const iso = bangkokInputToIso(f.published_at);
@@ -117,6 +143,22 @@ export function validateForm(f: PostForm, now: number): Record<string, string> {
     else if (Date.parse(iso) <= now) e.published_at = "เวลาเผยแพร่ต้องอยู่ในอนาคต";
   }
   return e;
+}
+
+/** Canonical override: empty, or an absolute https URL without spaces. */
+export function canonicalError(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (runes(v) > LIMITS.canonical) return "URL ยาวเกินไป";
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return "กรุณากรอก URL เต็ม เช่น https://www.example.com/article";
+  }
+  if (u.protocol !== "https:") return "ต้องเป็น URL ที่ขึ้นต้นด้วย https://";
+  if (/\s/.test(v) || !u.hostname.includes(".")) return "รูปแบบ URL ไม่ถูกต้อง";
+  return null;
 }
 
 /** Autosave needs only what the API requires for any draft. */
@@ -129,7 +171,7 @@ export function mapServerFields(fields: Record<string, string>): Record<string, 
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(fields)) {
     const key = k.replace(/\./g, "_").replace(/\[\d+\]/g, "");
-    out[key === "cover_url" || key === "cover_media_id" ? "cover" : key] = v;
+    out[key === "cover_url" || key === "cover_media_id" ? "cover" : key === "og_image_url" || key === "og_media_id" ? "og_image" : key] = v;
   }
   return out;
 }
@@ -147,6 +189,11 @@ export const FIELD_LABEL: Record<string, string> = {
   seo_description: "SEO description",
   cover: "รูปปก",
   cover_alt: "คำอธิบายรูปปก",
+  focus_keyword: "คีย์เวิร์ดหลัก",
+  canonical_url: "Canonical URL",
+  noindex: "ไม่ให้ Google เก็บหน้า (noindex)",
+  og_image: "รูปสำหรับแชร์",
+  og_image_alt: "คำอธิบายรูปสำหรับแชร์",
 };
 
 /**

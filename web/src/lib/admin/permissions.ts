@@ -97,4 +97,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "lead.note": "เพิ่มบันทึก Lead",
   "lead.assign": "มอบหมาย Lead",
   "lead.export": "ส่งออก Leads (CSV)",
+  "redirect.create": "สร้าง Redirect",
+  "redirect.update": "แก้ไข Redirect",
+  "redirect.delete": "ลบ Redirect",
 };

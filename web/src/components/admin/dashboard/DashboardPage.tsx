@@ -19,19 +19,19 @@ import { downloadResponse, toApiError } from "@/lib/admin/client";
 import { formatDateTime, LEAD_STATUSES, POST_STATUS_LABEL } from "@/lib/admin/format";
 import { formatRelative, todayLong } from "@/lib/admin/time";
 import type { Dashboard as DashboardData, Lead, PostSummary } from "@/lib/admin/types";
-import { LeadsDailyChart } from "./dashboard/LeadsDailyChart";
-import { leadName } from "./leads/lead-utils";
-import { alreadyNotified, errorMessage, useAdmin } from "./SessionProvider";
-import { Badge, LEAD_STATUS_SHORT, LEAD_STATUS_TONE, LeadStatusBadge } from "./ui/Badge";
-import { Button, ButtonLink } from "./ui/Button";
-import { Card, CardBody, CardHeader } from "./ui/Card";
-import { EmptyState, ErrorState, NoAccess } from "./ui/EmptyState";
-import { PageHeader } from "./ui/PageHeader";
-import { Skeleton } from "./ui/Skeleton";
-import { Delta, StatCard } from "./ui/Stat";
-import { useToast } from "./ui/Toast";
+import { LeadsDailyChart } from "./LeadsDailyChart";
+import { leadName } from "../leads/lead-utils";
+import { alreadyNotified, errorMessage, useAdmin } from "../SessionProvider";
+import { Badge, LEAD_STATUS_SHORT, LEAD_STATUS_TONE, LeadStatusBadge } from "../ui/Badge";
+import { Button, ButtonLink } from "../ui/Button";
+import { Card, CardBody, CardHeader } from "../ui/Card";
+import { EmptyState, ErrorState, NoAccess } from "../ui/EmptyState";
+import { PageHeader } from "../ui/PageHeader";
+import { Skeleton } from "../ui/Skeleton";
+import { Delta, StatCard } from "../ui/Stat";
+import { useToast } from "../ui/Toast";
 
-export function Dashboard() {
+export function DashboardPage() {
   const { request, requestRaw, user, can, canAny } = useAdmin();
   const toast = useToast();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -125,9 +125,9 @@ export function Dashboard() {
   return (
     <>
       {header}
-      <div className="grid gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {showLeads ? (
-          <section aria-labelledby="dash-leads" className="grid gap-3">
+          <section aria-labelledby="dash-leads" className="grid min-w-0 grid-cols-1 gap-3">
             <h2 id="dash-leads" className="text-base font-semibold">
               ผู้ติดต่อ (Leads)
             </h2>
@@ -163,7 +163,7 @@ export function Dashboard() {
                 foot={<span className="adm-stat-foot">สถานะ “ใหม่” ทั้งหมด</span>}
               />
             </div>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
               <Card as="section" aria-labelledby="dash-chart">
                 <CardHeader titleId="dash-chart" as="h3" title="Leads ใหม่รายวัน" description="30 วันล่าสุด (เวลาประเทศไทย)" />
                 <CardBody>{L ? <LeadsDailyChart daily={L.daily} /> : <Skeleton className="h-[15rem] w-full" />}</CardBody>
@@ -179,7 +179,7 @@ export function Dashboard() {
         ) : null}
 
         {showPosts ? (
-          <section aria-labelledby="dash-posts" className="grid gap-3">
+          <section aria-labelledby="dash-posts" className="grid min-w-0 grid-cols-1 gap-3">
             <h2 id="dash-posts" className="text-base font-semibold">
               บทความ
             </h2>
@@ -220,7 +220,7 @@ export function Dashboard() {
         ) : null}
 
         {showLeads || showPosts ? (
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {showLeads ? <RecentLeads leads={L?.recent ?? null} /> : null}
             {showPosts ? <RecentPosts posts={P?.recent ?? null} canWrite={can("posts:write")} /> : null}
           </div>

@@ -22,11 +22,12 @@ import {
   PanelRightOpen,
   PenLine,
   Send,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -71,13 +72,26 @@ import {
 } from "./post-form";
 import { CategoryPicker, CoverPicker, SlugField } from "./PostFields";
 import { PostStatusBadge } from "./PostStatusBadge";
+import { RetireDialog } from "./RedirectChoice";
+import { scoreTone } from "./seo-score";
 import { RangeCounter, SeoPanel } from "./SeoPanel";
+import { IndexingFields, SocialPanel } from "./SocialPreview";
 import { slugify } from "./slug";
 import "./posts.css";
 
 const BlockEditor = dynamic(() => import("../editor/BlockEditor"), {
   ssr: false,
   loading: () => <EditorSkeleton />,
+});
+const SeoChecklist = dynamic(() => import("./SeoChecklist"), {
+  ssr: false,
+  loading: () => (
+    <div className="grid gap-2" aria-hidden="true">
+      <Skeleton className="h-14 w-full" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </div>
+  ),
 });
 const PostPreview = dynamic(() => import("./PostPreview"), {
   ssr: false,
@@ -89,7 +103,25 @@ const PostPreview = dynamic(() => import("./PostPreview"), {
 });
 
 const AUTOSAVE_MS = 2000;
-const PANEL_FIELDS = new Set(["slug", "excerpt", "categories", "author", "status", "published_at", "seo_title", "seo_description", "cover", "cover_alt", "featured"]);
+const PANEL_FIELDS = new Set([
+  "slug",
+  "excerpt",
+  "categories",
+  "author",
+  "status",
+  "published_at",
+  "seo_title",
+  "seo_description",
+  "cover",
+  "cover_alt",
+  "featured",
+  "focus_keyword",
+  "canonical_url",
+  "noindex",
+  "og_image",
+  "og_image_alt",
+  "redirect_to",
+]);
 
 type SaveKind = "manual" | "auto";
 type Backup = { form: PostForm; savedAt: number };
@@ -141,6 +173,7 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
   const params = useParams<{ id?: string }>();
   const { request, can, user } = useAdmin();
   const toast = useToast();
+  const router = useRouter();
   const wide = useWide();
 
   const [postId, setPostId] = useState<string | null>(edit ? (params.id ?? null) : null);
@@ -161,7 +194,8 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [backup, setBackup] = useState<Backup | null>(null);
-  const [confirm, setConfirm] = useState<PostStatus | "unpublish" | null>(null);
+  const [confirm, setConfirm] = useState<PostStatus | "unpublish" | "delete" | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [now] = useState(() => Date.now());
 
   const editorApi = useRef<BlockEditorApi | null>(null);
@@ -230,7 +264,7 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
   /* ---------------- save ---------------- */
 
   const save = useCallback(
-    async (kind: SaveKind): Promise<boolean> => {
+    async (kind: SaveKind, redirectTo?: string): Promise<boolean> => {
       const current = formRef.current;
       if (!current) return false;
       const body = editorApi.current?.flush() ?? current.body_markdown;
@@ -252,6 +286,7 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
         setFormError(null);
       }
       const input = toInput(f);
+      if (redirectTo !== undefined) input.redirect_to = redirectTo;
       if (f.status === "published" && stored !== "published") {
         // "Publish now": keep an older past date (re-publish), otherwise now.
         const prevIso = post?.published_at ?? null;
@@ -378,6 +413,34 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  async function deletePost(redirectTo?: string) {
+    if (!postId) return;
+    setDeleting(true);
+    try {
+      await request<void>(`posts/${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+        json: redirectTo !== undefined ? { redirect_to: redirectTo } : undefined,
+      });
+      dropBackup(postId);
+      setSavedJson(formJson);
+      setConfirm(null);
+      toast.success(
+        stored === "published"
+          ? redirectTo
+            ? `ลบบทความแล้ว — URL เดิมส่งต่อไปที่ ${redirectTo}`
+            : "ลบบทความแล้ว — URL เดิมแจ้งว่าถูกลบถาวร (410)"
+          : "ลบบทความแล้ว",
+      );
+      router.replace("/admin/posts");
+    } catch (err) {
+      setConfirm(null);
+      if (err instanceof ApiError && err.status === 422) setFormError([err.message, ...Object.values(err.fields)].join(" · "));
+      else if (!alreadyNotified(err)) toast.error(errorMessage(err) || "ลบบทความไม่สำเร็จ");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   /* ---------------- primary action ---------------- */
 
   const target: PostStatus = canPublish ? (form?.status ?? "draft") : "draft";
@@ -500,6 +563,8 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
       update={update}
       setSlugAuto={setSlugAuto}
       setForm={setForm}
+      onInsertLink={(href, text) => editorApi.current?.insertLink(href, text)}
+      onDelete={postId && canWrite && (stored === "draft" || canPublish) ? () => setConfirm("delete") : undefined}
     />
   );
 
@@ -692,8 +757,36 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
         </Drawer>
       ) : null}
 
+      <RetireDialog
+        open={(confirm === "unpublish" || confirm === "delete") && stored === "published"}
+        action={confirm === "delete" ? "delete" : "unpublish"}
+        slug={post?.slug ?? form.slug}
+        postId={postId}
+        busy={saving === "manual" || deleting}
+        onClose={() => setConfirm(null)}
+        onConfirm={async (redirectTo) => {
+          if (confirm === "delete") {
+            await deletePost(redirectTo);
+            return;
+          }
+          await save("manual", redirectTo);
+          setConfirm(null);
+        }}
+      />
+
       <ConfirmDialog
-        open={confirm !== null}
+        open={confirm === "delete" && stored !== "published"}
+        title="ลบบทความนี้?"
+        message={stored === "scheduled" ? "บทความที่ตั้งเวลาไว้จะถูกลบและจะไม่เผยแพร่" : "ฉบับร่างนี้จะถูกลบ"}
+        confirmLabel="ลบบทความ"
+        danger
+        busy={deleting}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void deletePost()}
+      />
+
+      <ConfirmDialog
+        open={confirm !== null && confirm !== "delete" && !(confirm === "unpublish" && stored === "published")}
         title={
           confirm === "published"
             ? "เผยแพร่บทความนี้?"
@@ -723,7 +816,7 @@ export default function PostEditorPage({ edit }: { edit: boolean }) {
 
 /* ---------------- side panel ---------------- */
 
-function Section({ title, children, defaultOpen = true }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+function Section({ title, children, defaultOpen = true }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
   return (
     <details className="pe-sec" open={defaultOpen}>
       <summary>{title}</summary>
@@ -747,6 +840,8 @@ function SidePanel({
   update,
   setSlugAuto,
   setForm,
+  onInsertLink,
+  onDelete,
 }: {
   form: PostForm;
   post: Post | null;
@@ -762,7 +857,24 @@ function SidePanel({
   update: <K extends keyof PostForm>(key: K, value: PostForm[K]) => void;
   setSlugAuto: (v: boolean) => void;
   setForm: React.Dispatch<React.SetStateAction<PostForm | null>>;
+  onInsertLink: (href: string, text: string) => void;
+  onDelete?: () => void;
 }) {
+  const [score, setScore] = useState<number | null>(null);
+  const seoInput = useMemo(
+    () => ({
+      title: form.title,
+      seoTitle: form.seo_title,
+      seoDescription: form.seo_description,
+      excerpt: form.excerpt,
+      slug: form.slug,
+      focusKeyword: form.focus_keyword,
+      cover: form.cover,
+      noindex: form.noindex,
+      canonicalUrl: form.canonical_url,
+    }),
+    [form.title, form.seo_title, form.seo_description, form.excerpt, form.slug, form.focus_keyword, form.cover, form.noindex, form.canonical_url],
+  );
   const minLocal = isoToBangkokInput(new Date(now + 5 * 60_000).toISOString());
   return (
     <div className="pe-panel-inner">
@@ -892,6 +1004,30 @@ function SidePanel({
         </Field>
       </Section>
 
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            คะแนน SEO
+            {score !== null ? (
+              <span className="seo-pill" data-tone={scoreTone(score)} aria-label={`${score} จาก 100`}>
+                {score}
+              </span>
+            ) : null}
+          </span>
+        }
+      >
+        <SeoChecklist
+          input={seoInput}
+          body={form.body_markdown}
+          postId={postId}
+          disabled={readOnly}
+          keywordError={errors.focus_keyword}
+          onKeywordChange={(v) => update("focus_keyword", v)}
+          onInsertLink={readOnly ? undefined : onInsertLink}
+          onScore={setScore}
+        />
+      </Section>
+
       <Section title="SEO และตัวอย่างบน Google" defaultOpen={false}>
         <SeoPanel
           title={form.title}
@@ -902,6 +1038,33 @@ function SidePanel({
           errors={errors}
           disabled={readOnly}
           onChange={(k, v) => update(k, v)}
+        />
+      </Section>
+
+      <Section title="แชร์บนโซเชียล" defaultOpen={false}>
+        <SocialPanel
+          title={form.seo_title.trim() || form.title}
+          description={form.seo_description.trim() || form.excerpt}
+          slug={form.slug}
+          cover={form.cover}
+          ogImage={form.og_image}
+          errors={errors}
+          disabled={readOnly}
+          onOgChange={(og, mediaId) =>
+            setForm((f) => (f ? { ...f, og_image: og, og_media_id: mediaId === undefined ? f.og_media_id : mediaId } : f))
+          }
+        />
+      </Section>
+
+      <Section title="การแสดงผลบน Google (ขั้นสูง)" defaultOpen={Boolean(form.noindex || form.canonical_url || errors.canonical_url)}>
+        <IndexingFields
+          canonical={form.canonical_url}
+          noindex={form.noindex}
+          slug={form.slug}
+          errors={errors}
+          disabled={readOnly}
+          onCanonical={(v) => update("canonical_url", v)}
+          onNoindex={(v) => update("noindex", v)}
         />
       </Section>
 
@@ -924,6 +1087,16 @@ function SidePanel({
             <p className="adm-hint">
               สร้างโดย {post.created_by.name || post.created_by.email} · แก้ไขล่าสุด {formatDateTime(post.updated_at)}
             </p>
+          ) : null}
+          {onDelete ? (
+            <div className="border-t border-line pt-4">
+              <Button variant="danger" size="sm" icon={<Trash2 size={14} aria-hidden="true" />} onClick={onDelete}>
+                ลบบทความ
+              </Button>
+              {stored === "published" ? (
+                <p className="adm-hint mt-1.5">เลือกได้ว่าจะส่งผู้เข้าชม URL เดิมไปที่ใด ก่อนยืนยันการลบ</p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </Section>

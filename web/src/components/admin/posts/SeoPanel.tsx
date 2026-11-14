@@ -4,20 +4,9 @@ import { Monitor, Smartphone } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Field, Input, SegmentedControl, Textarea } from "../ui";
 import { LIMITS, RECOMMENDED } from "./post-form";
-
-const SITE_HOST = (process.env.NEXT_PUBLIC_SITE_URL || "https://www.ecomacrobiz.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
+import { SERP_DESC_LINE_PX, SERP_TITLE_PX, SITE_HOST, serpWidth } from "./serp-width";
 
 const runes = (s: string) => [...s].length;
-
-let ctx: CanvasRenderingContext2D | null = null;
-/** Rendered width in px (Google SERP uses Arial: 20px titles, 14px snippets on desktop). */
-function textWidth(text: string, font: string): number {
-  if (typeof document === "undefined") return 0;
-  ctx ??= document.createElement("canvas").getContext("2d");
-  if (!ctx) return 0;
-  ctx.font = font;
-  return ctx.measureText(text).width;
-}
 
 /** Counter with recommended range: green inside, amber outside, red over the hard limit. */
 export function RangeCounter({ value, range, max }: { value: string; range: readonly [number, number]; max: number }) {
@@ -52,17 +41,18 @@ export function SeoPanel({
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const shownTitle = (seoTitle.trim() || title.trim() || "ชื่อเรื่องบทความ") + " | ECOMACROBIZ";
   const shownDesc = seoDescription.trim() || excerpt.trim() || "คำอธิบายจะแสดงที่นี่ — Google อาจเลือกข้อความจากเนื้อหาแทนหากไม่มีคำอธิบาย";
-  const titleTooWide = useMemo(() => textWidth(shownTitle, "20px Arial") > 600, [shownTitle]);
-  const descTooWide = useMemo(() => textWidth(shownDesc, "14px Arial") > 920 * 2, [shownDesc]);
+  const titlePx = useMemo(() => serpWidth(shownTitle, 20), [shownTitle]);
+  const titleTooWide = titlePx > SERP_TITLE_PX;
+  const descTooWide = useMemo(() => serpWidth(shownDesc, 14) > SERP_DESC_LINE_PX * 2, [shownDesc]);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <Field
         label="SEO title"
         error={errors.seo_title}
         hint={
           <>
-            <RangeCounter value={seoTitle} range={RECOMMENDED.seoTitle} max={LIMITS.seoTitle} /> · เว้นว่าง = ใช้ชื่อเรื่อง
+            <RangeCounter value={seoTitle} range={RECOMMENDED.seoTitle} max={LIMITS.seoTitle} /> · ≈ {titlePx}/{SERP_TITLE_PX} px บน Google · เว้นว่าง = ใช้ชื่อเรื่อง
           </>
         }
       >
@@ -91,7 +81,7 @@ export function SeoPanel({
         )}
       </Field>
 
-      <div className="grid gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium">ตัวอย่างบน Google</p>
           <SegmentedControl
@@ -121,7 +111,7 @@ export function SeoPanel({
         </div>
         {titleTooWide || descTooWide ? (
           <p className="adm-hint" data-warn="true">
-            {titleTooWide ? "ชื่อเรื่องยาวเกินพื้นที่ที่ Google แสดง (~600px) จะถูกตัดด้วย “…”" : ""}
+            {titleTooWide ? `ชื่อเรื่องยาวเกินพื้นที่ที่ Google แสดง (~${SERP_TITLE_PX}px) จะถูกตัดด้วย “…”` : ""}
             {titleTooWide && descTooWide ? " · " : ""}
             {descTooWide ? "คำอธิบายยาวเกินประมาณ 2 บรรทัดที่ Google แสดง" : ""}
           </p>

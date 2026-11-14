@@ -51,12 +51,17 @@ export type PostSummary = {
   seo_description: string;
   status: PostStatus;
   created_by: UserRef | null;
+  canonical_url: string;
+  noindex: boolean;
+  og_image: Cover | null;
 };
 
 export type Post = PostSummary & {
   body_markdown: string;
   legacy_slugs: string[];
   cover_media_id?: string | null;
+  focus_keyword: string;
+  og_media_id?: string | null;
 };
 
 export type PostInput = {
@@ -74,6 +79,13 @@ export type PostInput = {
   reading_minutes?: number | null;
   seo_title: string;
   seo_description: string;
+  focus_keyword: string;
+  canonical_url: string;
+  noindex: boolean;
+  og_media_id?: string | null;
+  og_image: Cover | null;
+  /** Only used when this update unpublishes a published post: null/"" => 410 Gone, path/URL => 301. */
+  redirect_to?: string | null;
 };
 
 export type SlugCheck = { slug: string; valid: boolean; available: boolean; suggestion: string };
@@ -240,3 +252,20 @@ export type SettingsOverview = {
   scheduler_interval_seconds: number;
   migrate_on_start: boolean;
 };
+
+/* ---------------- SEO: redirects ---------------- */
+
+export type RedirectStatus = 301 | 410;
+export type Redirect = {
+  id: string;
+  from: string;
+  to: string | null;
+  status: RedirectStatus;
+  kind: "manual" | "auto";
+  note: string;
+  created_by: UserRef | null;
+  created_at: string;
+  updated_at: string;
+};
+export type RedirectInput = { from: string; to: string | null; status: RedirectStatus; note: string };
+export type LinkSuggestion = { id: string; title: string; slug: string; url: string };

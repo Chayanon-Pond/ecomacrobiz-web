@@ -57,6 +57,8 @@ export type BlockEditorApi = {
   /** Serializes pending edits now and returns the Markdown. */
   flush: () => string;
   focus: () => void;
+  /** Inserts a link at the last cursor position (or links the selected text). */
+  insertLink: (href: string, text: string) => void;
 };
 
 export type BlockEditorProps = {
@@ -198,6 +200,14 @@ export default function BlockEditor({
         return lastEmitted.current ?? initialMarkdown;
       },
       focus: () => editor.commands.focus(),
+      insertLink: (href, text) => {
+        const chain = editor.chain().focus();
+        if (editor.state.selection.empty) {
+          chain.insertContent([{ type: "text", text, marks: [{ type: "link", attrs: { href } }] }, { type: "text", text: " " }]).run();
+        } else {
+          chain.setLink({ href }).run();
+        }
+      },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
