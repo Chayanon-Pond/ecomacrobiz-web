@@ -3,6 +3,8 @@
  * with at least a BreadcrumbList. URLs are absolutised against site.url.
  */
 import { office, site } from "@/content/site";
+import type { Comment, Stats } from "@/lib/community/types";
+import { DELETED_AUTHOR_NAME } from "@/lib/community/types";
 
 type Json = Record<string, unknown>;
 
@@ -154,6 +156,8 @@ export function blogPostingJsonLd(p: {
   dateModified?: string;
   author?: string;
   section?: string;
+  /** Live community data (lib/community/server.ts). Omit when the API was unavailable. */
+  engagement?: PostEngagement;
 }): Json {
   const url = absUrl(p.path);
   return {
@@ -172,6 +176,85 @@ export function blogPostingJsonLd(p: {
     ...(p.section ? { articleSection: p.section } : {}),
     inLanguage: "th-TH",
     isPartOf: { "@id": WEBSITE_ID },
+    ...(p.engagement ? engagementJsonLd(p.engagement, url) : {}),
+  };
+}
+
+export type PostEngagement = {
+  /** Real API counts; null when only the comment list is known. */
+  stats: Stats | null;
+  /** Total visible comments incl. replies (comments meta comment_count). */
+  commentCount: number;
+  /** First page as rendered in the HTML (top-level with reply previews). */
+  comments: Comment[];
+};
+
+const MAX_LD_COMMENTS = 30;
+
+/** Plain text of the server-rendered comment HTML (strong/em/a/br only). */
+export function commentPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&#x0*27;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function commentNode(c: Comment, postUrl: string, budget: { left: number }): Json | null {
+  // Only published, non-deleted comments with text are UGC worth describing.
+  if (c.status !== "published" || budget.left <= 0) return null;
+  const text = commentPlainText(c.body_html);
+  if (!text && !c.image) return null;
+  budget.left--;
+  const replies = (c.replies ?? [])
+    .map((r) => commentNode(r, postUrl, budget))
+    .filter((n): n is Json => n !== null);
+  return {
+    "@type": "Comment",
+    "@id": `${postUrl}#comment-${c.id}`,
+    url: `${postUrl}#comment-${c.id}`,
+    text: text || "รูปภาพ",
+    dateCreated: toIso(c.created_at),
+    ...(c.edited_at ? { dateModified: toIso(c.edited_at) } : {}),
+    author: { "@type": "Person", name: c.author?.display_name ?? DELETED_AUTHOR_NAME },
+    ...(c.like_count > 0 ? { upvoteCount: c.like_count } : {}),
+    ...(c.image ? { image: absUrl(c.image.url) } : {}),
+    ...(replies.length ? { comment: replies } : {}),
+  };
+}
+
+function counter(type: "LikeAction" | "CommentAction" | "ViewAction", n: number): Json {
+  return {
+    "@type": "InteractionCounter",
+    interactionType: `https://schema.org/${type}`,
+    userInteractionCount: Math.max(0, Math.floor(n)),
+  };
+}
+
+/** commentCount, interactionStatistic (real counts only) and the rendered comments. */
+export function engagementJsonLd(e: PostEngagement, postUrl: string): Json {
+  const budget = { left: MAX_LD_COMMENTS };
+  const comments = e.comments
+    .map((c) => commentNode(c, postUrl, budget))
+    .filter((n): n is Json => n !== null);
+  const commentCount = e.stats ? e.stats.comments : e.commentCount;
+  return {
+    commentCount,
+    ...(e.stats
+      ? {
+          interactionStatistic: [
+            counter("LikeAction", e.stats.likes),
+            counter("CommentAction", e.stats.comments),
+            counter("ViewAction", e.stats.views),
+          ],
+        }
+      : {}),
+    ...(comments.length ? { comment: comments } : {}),
   };
 }
 

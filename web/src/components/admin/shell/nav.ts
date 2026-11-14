@@ -3,9 +3,11 @@ import {
   FileText,
   Image as ImageIcon,
   LayoutDashboard,
+  MessageSquare,
   Shuffle,
   Settings,
   UserCog,
+  UserRound,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -39,6 +41,13 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "ชุมชน",
+    items: [
+      { href: "/admin/comments", label: "ความคิดเห็น", en: "Comments", icon: MessageSquare, anyOf: ["comments:moderate"], keywords: "comment moderation รอตรวจ รายงาน report คอมเมนต์" },
+      { href: "/admin/members", label: "สมาชิก", en: "Members", icon: UserRound, anyOf: ["comments:moderate"], keywords: "member community ระงับ ban แบน" },
+    ],
+  },
+  {
     label: "การขาย",
     items: [
       { href: "/admin/leads", label: "รายชื่อผู้ติดต่อ", en: "Leads", icon: Users, anyOf: ["leads:read"], keywords: "ลูกค้า contact crm" },
@@ -63,6 +72,8 @@ const SEGMENT_LABEL: Record<string, string> = {
   media: "คลังสื่อ",
   redirects: "เปลี่ยนเส้นทาง URL",
   leads: "รายชื่อผู้ติดต่อ",
+  comments: "ความคิดเห็น",
+  members: "สมาชิก",
   users: "ผู้ใช้และสิทธิ์",
   audit: "บันทึกกิจกรรม",
   settings: "การตั้งค่า",

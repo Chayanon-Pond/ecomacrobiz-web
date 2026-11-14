@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { getCategories, getPostsPage, type PostsPage } from "@/lib/posts";
+import { getStats, type StatsResult } from "@/lib/community/server";
 import { CategoryFilter } from "./CategoryFilter";
 import { Pagination } from "./Pagination";
 import { PostCard } from "./PostCard";
@@ -14,11 +15,13 @@ function parsePage(raw: string | string[] | undefined): number {
 
 function PostGrid({
   data,
+  stats,
   base,
   excludeSlug,
   emptyText,
 }: {
   data: PostsPage;
+  stats: StatsResult;
   base: string;
   excludeSlug?: string;
   emptyText: string;
@@ -41,7 +44,7 @@ function PostGrid({
       <ul className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {posts.map((post) => (
           <li key={post.slug} className="kn-rise flex">
-            <PostCard post={post} />
+            <PostCard post={post} stats={stats.bySlug[post.slug]} />
           </li>
         ))}
       </ul>
@@ -68,7 +71,8 @@ async function PagedPostGrid({
 }) {
   const page = parsePage((await searchParams).page);
   const data = page === 1 ? first : await getPostsPage({ page, category });
-  return <PostGrid data={data} base={base} excludeSlug={excludeSlug} emptyText={emptyText} />;
+  const stats = await getStats(data.posts.map((p) => p.slug));
+  return <PostGrid data={data} stats={stats} base={base} excludeSlug={excludeSlug} emptyText={emptyText} />;
 }
 
 /**
@@ -95,6 +99,7 @@ export async function PostListing({
     category ? getPostsPage({}) : Promise.resolve(null),
     getCategories(),
   ]);
+  const firstStats = await getStats(first.posts.map((p) => p.slug));
   const base = category ? `/knowledge/category/${category}` : "/knowledge";
   const emptyText = "ยังไม่มีบทความในหมวดนี้ ติดตามบทความใหม่จากทีม ECOMACROBIZ ได้เร็ว ๆ นี้";
   return (
@@ -106,7 +111,7 @@ export async function PostListing({
         <CategoryFilter categories={categories} active={category ?? null} total={(all ?? first).total} />
       </div>
       <Suspense
-        fallback={<PostGrid data={first} base={base} excludeSlug={excludeSlug} emptyText={emptyText} />}
+        fallback={<PostGrid data={first} stats={firstStats} base={base} excludeSlug={excludeSlug} emptyText={emptyText} />}
       >
         <PagedPostGrid
           searchParams={searchParams}

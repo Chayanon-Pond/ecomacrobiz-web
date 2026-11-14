@@ -50,6 +50,14 @@ type Deps struct {
 	TokenLimiter *ratelimit.Limiter
 	// PasswordLimiter: per-user limit on PUT /account/password.
 	PasswordLimiter *ratelimit.Limiter
+
+	// Community (members, comments, likes, views). Members nil = the
+	// community API is not mounted. Google nil = Google sign-in off.
+	Members         *service.MemberService
+	Google          *service.GoogleService
+	Comments        *service.CommentService
+	Engagement      *service.EngagementService
+	CommunityLimits CommunityLimiters
 }
 
 type handler struct{ Deps }
@@ -100,11 +108,18 @@ func NewRouter(d Deps) (*gin.Engine, error) {
 	admin := v1.Group("/admin", noStore)
 	admin.POST("/auth/login", middleware.BodyLimit(smallBodyLimit), middleware.RequireOrigin(cors), h.login)
 
+	if d.Members != nil {
+		h.registerCommunityRoutes(v1) // routes_community.go: /api/v1/community (member session, own CSRF)
+	}
+
 	authed := admin.Group("", middleware.RequireSession(d.Auth, d.Log), middleware.RequireCSRF(cors))
 	// Every authed route MUST carry RequirePerm / RequireAnyPerm / AnyAuthenticated
 	// (asserted by the RBAC matrix test).
 	h.registerAuthRoutes(admin, authed) // routes_auth.go: auth, account, users, invites, audit, settings
 	h.registerContentRoutes(authed)     // routes_content.go: dashboard, posts, media, leads
+	if d.Members != nil {
+		h.registerCommentAdminRoutes(authed) // routes_community.go: comments + members moderation
+	}
 	return r, nil
 }
 

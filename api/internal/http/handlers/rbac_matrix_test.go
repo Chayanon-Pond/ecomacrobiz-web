@@ -29,6 +29,7 @@ var matrixRoles = []string{rOwner, rEditor, rSales, rViewer}
 
 type matrixRoute struct {
 	public  bool     // no session required
+	member  bool     // community route: member session (see memberRoutes in community_test.go)
 	allowed []string // roles allowed (admin routes only)
 }
 
@@ -45,8 +46,17 @@ var (
 	mLeadsRead   = roles(rOwner, rSales, rViewer)
 	mLeadsWrite  = roles(rOwner, rSales)
 	mLeadsExport = roles(rOwner, rSales)
+	mModerate    = roles(rOwner, rEditor) // comments:moderate
 	mPublic      = matrixRoute{public: true}
 )
+
+func init() {
+	// Community routes are gated by the member session, not RBAC; their
+	// gates are asserted route by route by TestMemberCSRFMatrix.
+	for k := range memberRoutes {
+		expectedMatrix[k] = matrixRoute{member: true}
+	}
+}
 
 // expectedMatrix: every route the router registers, "METHOD /path" as Gin
 // reports it. A route missing here fails TestRBACMatrixCoversAllRoutes.
@@ -112,6 +122,15 @@ var expectedMatrix = map[string]matrixRoute{
 	"POST /api/v1/admin/redirects":       mPostsPub,
 	"PUT /api/v1/admin/redirects/:id":    mPostsPub,
 	"DELETE /api/v1/admin/redirects/:id": mPostsPub,
+
+	// community moderation (CONTRACT-COMMUNITY §8)
+	"GET /api/v1/admin/comments":             mModerate,
+	"POST /api/v1/admin/comments/bulk":       mModerate,
+	"GET /api/v1/admin/comments/:id/history": mModerate,
+	"PATCH /api/v1/admin/comments/:id":       mModerate,
+	"DELETE /api/v1/admin/comments/:id":      mModerate,
+	"GET /api/v1/admin/members":              mModerate,
+	"PATCH /api/v1/admin/members/:id":        mModerate,
 }
 
 func matrixPath(p string) string {
@@ -159,8 +178,8 @@ func TestRBACMatrix(t *testing.T) {
 	checked := 0
 	for _, key := range sortedRouteKeys(e) {
 		m, ok := expectedMatrix[key]
-		if !ok || m.public {
-			continue // coverage asserted by TestRBACMatrixCoversAllRoutes; public below
+		if !ok || m.public || m.member {
+			continue // coverage asserted by TestRBACMatrixCoversAllRoutes; public below; member: TestMemberCSRFMatrix
 		}
 		method, pattern, _ := strings.Cut(key, " ")
 		if !strings.HasPrefix(pattern, "/api/v1/admin/") {
@@ -274,7 +293,7 @@ func TestRBACPublicRoutesNeedNoSession(t *testing.T) {
 		}
 	}
 	for k, m := range expectedMatrix {
-		if m.public && !covered[k] {
+		if m.public && !m.member && !covered[k] {
 			t.Errorf("public route %s has no no-session check", k)
 		}
 	}

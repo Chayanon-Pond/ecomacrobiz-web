@@ -35,6 +35,8 @@ const (
 	PermUsersManage    Permission = "users:manage"
 	PermAuditRead      Permission = "audit:read"
 	PermSettingsManage Permission = "settings:manage"
+	// PermCommentsModerate: community comments and members (owner, editor).
+	PermCommentsModerate Permission = "comments:moderate"
 )
 
 // AllPermissions in a stable order (used for owner and for /auth/me output).
@@ -44,17 +46,18 @@ var AllPermissions = []Permission{
 	PermLeadsRead, PermLeadsWrite, PermLeadsExport,
 	PermUsersRead, PermUsersManage,
 	PermAuditRead, PermSettingsManage,
+	PermCommentsModerate,
 }
 
 // RolePermissions is the role -> permission matrix.
 //
 //	owner  : everything
-//	editor : content (posts incl. publish, media)
+//	editor : content (posts incl. publish, media) + comment moderation
 //	sales  : leads (read, update/notes/assign, export)
 //	viewer : read-only posts, media and leads (no export, no PII download)
 var RolePermissions = map[Role][]Permission{
 	RoleOwner:  AllPermissions,
-	RoleEditor: {PermPostsRead, PermPostsWrite, PermPostsPublish, PermMediaRead, PermMediaWrite},
+	RoleEditor: {PermPostsRead, PermPostsWrite, PermPostsPublish, PermMediaRead, PermMediaWrite, PermCommentsModerate},
 	RoleSales:  {PermLeadsRead, PermLeadsWrite, PermLeadsExport},
 	RoleViewer: {PermPostsRead, PermMediaRead, PermLeadsRead},
 }

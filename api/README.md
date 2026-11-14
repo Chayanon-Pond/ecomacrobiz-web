@@ -14,7 +14,9 @@ internal/config           env parsing + validation (documented in .env.example)
 internal/domain           core types, ValidationError (Thai field messages), sentinel errors
 internal/repository       interfaces + hand-written pgx implementations
 internal/repository/fake  in-memory implementations for unit/handler tests
-internal/service          business rules: contact, posts, auth, leads (CSV), media
+internal/service          business rules: contact, posts, auth, leads (CSV), media,
+                          community (members, Google sign-in, comments, likes, views)
+internal/vault            member-data crypto: AES-256-GCM keyring, blind index, argon2id
 internal/seed             posts.json bundle importer (idempotent upsert)
 internal/http/handlers    Gin router + endpoints + DTOs
 internal/http/middleware  request id, access log, recover, security headers, CORS,
@@ -24,6 +26,7 @@ internal/ratelimit        keyed token bucket (x/time/rate) with idle cleanup
 internal/notify           Notifier interface, SMTP email, LINE push, async fan-out,
                           web revalidation webhook
 internal/storage          MediaStore interface, LocalDisk (os.Root-confined)
+cmd/oidcstub              DEV-ONLY OpenID Connect provider standing in for Google (never wired into serve)
 ```
 
 Request flow: `handler -> service (validation, rules) -> repository (SQL)`.
@@ -115,7 +118,9 @@ TEST_DATABASE_URL='postgres://escoma:escoma-dev-only@localhost:55432/escoma?sslm
 ```
 
 Integration tests create a random schema, run all migrations (including
-down/up), test repository CRUD, and drop the schema.
+down/up), test repository CRUD, and drop the schema. Point `TEST_DATABASE_URL`
+at a throwaway database (`CREATE DATABASE escoma_it` on the compose Postgres)
+rather than the dev `escoma` database.
 
 ## Docker image
 
@@ -226,7 +231,7 @@ curl -s -b $J -X POST   localhost:18080/api/v1/admin/auth/logout -H "X-CSRF-Toke
 Roles, users, invitations, password resets, self-service account, audit log
 and the settings overview. Base `/api/v1/admin`; every non-GET call needs
 `X-CSRF-Token` (except the two public token endpoints). Role → permission
-matrix: `internal/domain/rbac.go` (owner = everything; editor = posts+media;
+matrix: `internal/domain/rbac.go` (owner = everything; editor = posts+media+comment moderation;
 sales = leads incl. export; viewer = read-only posts/media/leads). A missing
 permission is `403 forbidden` with a Thai message.
 
@@ -334,7 +339,7 @@ DELETE FROM audit_logs WHERE created_at < now() - interval '365 days';
 ### Settings overview
 
 `GET /settings/overview` →
-`{app_env, public_base_url, web_base_url, revalidate_webhook, email:{configured, provider:"resend"|"smtp"|null, recipients}, line:{configured}, session_ttl_hours, invite_ttl_hours, max_upload_mb, scheduler_interval_seconds, migrate_on_start}`
+`{app_env, public_base_url, web_base_url, revalidate_webhook, email:{configured, provider:"resend"|"smtp"|null, recipients}, line:{configured}, session_ttl_hours, invite_ttl_hours, max_upload_mb, scheduler_interval_seconds, migrate_on_start, members:{google_enabled, require_verified_email, hold_first_comment, turnstile_enabled, data_key_ids}}`
 (no secrets, no recipient addresses).
 
 ## Admin API v2 — content
@@ -541,6 +546,222 @@ alt text, else of the original file name without extension, else `image`
 (e.g. Thai-only text). Existing `<uuid>.<ext>` keys are untouched. Storage
 never overwrites a key (`ErrKeyExists` → a new random suffix is drawn).
 
+## Community API (members, Google sign-in, comments, likes, views)
+
+Binding spec: `CONTRACT-COMMUNITY` (handed to api + web). The TypeScript
+mirror of every shape below is `web/src/lib/community/types.ts`; the Go DTOs
+are in `internal/http/handlers/dto_community.go`.
+
+### Identity separation
+
+Members are **not** admin users: own tables, own cookie `escoma_member`
+(HttpOnly, `Secure` when `COOKIE_SECURE`, **SameSite=Lax** so the Google
+redirect back to the site carries it, `Path=/`, `Max-Age=MEMBER_SESSION_TTL`),
+own CSRF token and own middleware (`middleware/member.go`). The admin
+middleware never reads `escoma_member`; the member middleware never reads
+`escoma_admin`. Both directions are tested (`TestMemberCSRFMatrix`,
+`TestMemberCookieNeverAuthenticatesAdmin`).
+
+Every community route runs `LoadMemberSession` (optional session). `[auth]`
+routes add `RequireMember` (401) and `RequireMemberCSRF`: unsafe methods need
+`X-CSRF-Token` equal (constant time) to the member session's token and an
+allowlisted `Origin` when one is present. Pre-session unsafe routes (register,
+login, verify, forgot, reset, google/link, views) use `RequireOrigin` + rate
+limits. Banned members still resolve their session (so the UI can explain),
+but community writes return 403 `member_banned`; banning revokes all sessions.
+
+### Endpoints — base `/api/v1/community` (`Cache-Control: no-store` unless noted)
+
+Errors use the usual envelope. Community codes: `email_taken` 409,
+`invalid_credentials` 401, `member_banned` 403, `email_unverified` 403,
+`token_invalid` 404, `duplicate_comment` 422, `last_login_method` 409,
+`conflict` 409, `rate_limited` 429 (+ `Retry-After`).
+
+| Method | Path | Gate | Notes |
+| --- | --- | --- | --- |
+| GET | `/config` | public, `public, max-age=60` | → `{google_enabled, require_verified_email, email_transport, consent_version, comment_max_chars, comment_image_max_mb, avatar_max_mb, turnstile}` |
+| GET | `/auth/me` | public | → `{data: Session\|null}` (`Session = {member: Me, csrf_token}`) |
+| POST | `/auth/register` | Origin, `MEMBER_REGISTER_RATE_LIMIT`/IP, honeypot `website`, Turnstile when on | `{display_name, email, password, accept_terms, consent_version, website, turnstile_token?}` → 201 Session + cookie; mails a verification link when e-mail is on |
+| POST | `/auth/login` | Origin, `MEMBER_LOGIN_RATE_LIMIT` per IP and per e-mail; Turnstile after 3 failures/IP when on | `{email, password, turnstile_token?}` → Session. Unknown e-mail, Google-only account and wrong password are the same 401 |
+| POST | `/auth/logout` | [auth] | 204, clears the cookie |
+| POST | `/auth/verify-email` | Origin, 20/10m per IP | `{token}` → `{verified:true, kind:"verify"\|"change_email"}` |
+| POST | `/auth/verify-email/resend` | [auth], 3/h per member | 204 (no-op when verified or e-mail off) |
+| POST | `/auth/password/forgot` | Origin, 5/h per IP and per address | `{email}` → 204 always |
+| POST | `/auth/password/reset` | Origin, 20/10m per IP | `{token, password}` → 204; revokes ALL sessions, marks the e-mail verified |
+| GET | `/auth/google/start?next=&consent=1` | 20/10m per IP | 302 to Google; sets `escoma_oauth` (`Path=/api/community/auth/google`, 600 s). 404 when Google is off |
+| GET | `/auth/google/callback?code&state` | public | 302 to `${WEB_BASE_URL}${next}#community=<outcome>` or `${WEB_BASE_URL}/account/link-google#token=<t>`; always deletes the state row and clears `escoma_oauth` |
+| POST | `/auth/google/link` | Origin, 10/15m per IP (a wrong password also counts toward the login limit) | `{token, password}` → Session |
+| PUT | `/account/profile` | [auth] | `{display_name}` → Me |
+| POST / DELETE | `/account/avatar` | [auth], POST 10/h | multipart `file` → Me |
+| PUT | `/account/email` | [auth], 5/15m | `{new_email, current_password}` → `{member: Me, verification_sent}` |
+| PUT | `/account/password` | [auth], 5/15m | `{current_password?, new_password}` → 204; revokes other sessions + open reset links |
+| GET | `/account/sessions` | signed-in | `[{id, ip, user_agent, created_at, last_seen_at, expires_at, current}]` |
+| DELETE | `/account/sessions/others` | [auth] | → `{revoked}` |
+| DELETE | `/account/identities/google` | [auth] | 204 (idempotent); 409 `last_login_method` without a password |
+| GET | `/account/export` | signed-in | attachment `ecomacrobiz-account.json`: the raw object `{member, identities, comments, likes:{posts, comments}, sessions}` (not wrapped in `data`) |
+| DELETE | `/account` | [auth], 5/15m | `{current_password?, confirm:"ลบบัญชี"}` → 204 + cookie cleared |
+| GET | `/stats?slugs=a,b` | public, `public, max-age=60` | ≤ 50 slugs → `{"<slug>": {views, likes, comments}}` (unknown slugs omitted) |
+| GET | `/posts/:slug/stats` | public | → `{views, likes, comments, liked_by_me}` |
+| POST | `/posts/:slug/views` | Origin, 60/10m per IP | 204 always (bots, duplicates and unknown slugs too) |
+| PUT / DELETE | `/posts/:slug/like` | [auth], 60/1m | → `{liked, likes}` (idempotent) |
+| GET | `/posts/:slug/comments?sort=newest\|top&page&per_page≤50&replies_preview=0..10` | public | → `{data: Comment[], meta:{page, per_page, total, total_pages, comment_count}}` (`replies_preview` default 2) |
+| POST | `/posts/:slug/comments` | [auth], `COMMENT_RATE_LIMIT`/member + `COMMENT_IP_RATE_LIMIT`/IP | `{body, parent_id?, reply_to_id?, image_id?, website, elapsed_ms}` → 201 Comment |
+| GET | `/comments/:id/replies?page&per_page≤50` | public | oldest first |
+| PATCH | `/comments/:id` | [auth], author | `{body}` → Comment (the previous body is kept in `comment_edits`) |
+| DELETE | `/comments/:id` | [auth], author or member moderator | 204 (soft delete; the image row + file are removed) |
+| PUT / DELETE | `/comments/:id/like` | [auth], 60/1m | → `{liked, likes}`; 404 unless published |
+| POST | `/comments/:id/report` | [auth], 20/h | `{reason: spam\|harassment\|inappropriate\|other, note?}` → 204 (upsert) |
+| POST | `/comments/:id/moderate` | [auth], member role `moderator` | `{action: approve\|hide}` → Comment |
+| POST | `/uploads/comment-image` | [auth], 10/h | multipart `file` → 201 `{id, url, width, height}` |
+
+Verified-e-mail gate: with `MEMBER_REQUIRE_VERIFIED_EMAIL=true`, comments,
+likes, reports and uploads by an unverified member → 403 `email_unverified`.
+
+E-mailed links (need an e-mail transport + `WEB_BASE_URL`):
+`/account/verify-email#token=` (verify 48 h, change e-mail 24 h) and
+`/account/reset-password#token=` (1 h). Google link-required:
+`/account/link-google#token=` (15 min). Tokens only ever travel in fragments.
+
+Google callback outcomes (`#community=`): `signed-in`; `error-state`
+(unknown, expired or replayed state, or the browser-binding cookie does not
+match); `error-denied` (user cancelled); `error-provider` (discovery, code
+exchange or ID-token verification failed); `error-token` (nonce mismatch);
+`error-unverified` (Google `email_verified` is false); `error-banned`;
+`error-consent` (new account without `consent=1`); `error-conflict`;
+`error-internal`. `link-required` goes to the link page instead.
+
+Resolution: (1) known Google identity → sign in; (2) a member with the same
+e-mail: verified → link automatically and sign in, unverified → link token +
+the account password; (3) otherwise create the member (display name from the
+Google name, e-mail verified, `terms_version` = the consent version recorded
+at `/start`). A Google picture on `https://*.googleusercontent.com` is
+downloaded in the background (5 s, ≤ 2 MB) through the avatar pipeline when the
+member has no avatar (never hotlinked).
+
+### Comment rules
+
+Body: NFC, CRLF→LF, control characters removed, > 2 blank lines collapsed,
+1..2000 characters (empty allowed with an image). More than 2 links (http(s)
+or bare domains) → 422 `fields.body`. The same normalized body by the same
+member within 24 h → 422 `duplicate_comment`. `elapsed_ms < 2500` → 422. A
+filled honeypot gets a fake pending comment and nothing is stored. Status on
+create: trusted/moderator → published; otherwise, with
+`MEMBER_HOLD_FIRST_COMMENT`, a member without a published comment whose
+e-mail is unverified or whose account is younger than 24 h → pending; else
+published. Three distinct reporters on a published comment by a non-trusted
+author move it back to pending. `parent_id` is always stored as the top-level
+comment (depth 2); `reply_to_id` must be in the same thread. Every change that
+affects public output sends `comments:<slug>` to the revalidation webhook
+(likes and views never do).
+
+`body_html` is rendered in Go without a library (`service/community_text.go`):
+every character of user input passes `html.EscapeString`; the only tags ever
+produced are `strong`, `em`, `br` and `a href="http(s)://…" rel="ugc nofollow
+noopener" target="_blank"` (link text ≤ 200). XSS vectors are table-tested.
+
+Visibility: anonymous/others see published comments plus deleted placeholders
+that still have visible replies; authors also see their own pending comments;
+member moderators also see pending and hidden ones.
+
+### Images (avatars, comment images)
+
+Stored with the existing `MediaStore` and served by `/media/*`, but **not**
+inserted into the `media` table (they never appear in the admin library).
+Keys: `a-<16 hex>.jpg` (avatar), `c-<16 hex>.jpg|png` (comment). Pipeline
+(`service/community_image.go`): JPEG/PNG/WebP sniffed from content, ≤ 40 MP,
+fully decoded and re-encoded (all metadata dropped), JPEG auto-oriented.
+Avatar: centre square crop, ≤ 512 px, JPEG q85, alpha flattened onto
+`#111318`. Comment image: longest side ≤ 1600 px, JPEG q82 (PNG kept when it
+has transparency). Unattached comment images are purged after 24 h.
+
+### Views
+
+`POST /posts/:slug/views` ignores bot user agents (regex in
+`service/community_text.go`; an empty UA is a bot) and counts at most one view
+per (UTC day, post, `HMAC-SHA256(daily salt, ip + "\n" + ua)`). Raw IPs are
+never stored for views; salts and dedupe rows older than yesterday are deleted
+hourly, after which old hashes cannot be linked to anyone.
+
+### Hourly purge
+
+`CommunityJanitor` (started by `serve`, stopped with the shutdown context)
+deletes expired member sessions, member tokens and OAuth states; view
+salts/dedupe rows of days before yesterday; unattached comment images older
+than 24 h (row and file).
+
+### Admin API (`comments:moderate` — owner and editor)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/admin/comments?status=pending\|published\|hidden\|deleted\|reported\|all&q&post&member_id&page&per_page≤100` | newest first → `{data: AdminComment[], meta, counts:{pending, reported}}` |
+| PATCH | `/admin/comments/:id` | `{status: published\|hidden}` → AdminComment; audit `comment.approve` / `comment.hide` |
+| DELETE | `/admin/comments/:id` | 204; audit `comment.delete` |
+| POST | `/admin/comments/bulk` | `{action: approve\|hide\|delete, ids[1..100]}` → `{succeeded:[id], failed:[{id, message}]}` |
+| GET | `/admin/comments/:id/history` | `[{body, edited_at}]` newest first |
+| GET | `/admin/members?q&role&page&per_page≤100` | `q` containing `@` = exact e-mail (blind index), else display name contains → AdminMember[] |
+| PATCH | `/admin/members/:id` | `{role?, banned_reason?, hide_comments?}` → AdminMember; audit `member.role_change {from,to}`, `member.ban`, `member.unban`, `member.hide_comments` |
+
+`AdminComment {id, post:{slug,title}, parent_id, author:{id,display_name,role}|null, body, body_html, image, status, like_count, report_count, reports[≤10], created_at, edited_at, moderated_at, moderated_by:{kind,name}|null}`;
+`AdminMember {id, display_name, email_masked, email? , email_verified, role, avatar_url, providers, comment_count, created_at, last_login_at, banned_at, banned_reason}`.
+`email` is only present for actors with `users:manage` (owner); everyone
+else gets `email_masked` (`s***@g***.com`). Audit metadata carries the member
+id + display name, never member e-mails. The settings overview gains
+`members: {google_enabled, require_verified_email, hold_first_comment,
+turnstile_enabled, data_key_ids}`.
+
+### Member data protection (threat model notes)
+
+- **E-mails** are stored only as AES-256-GCM ciphertext (`nonce||ct`, AAD
+  `member-email:<member id>`, so a ciphertext copied into another row does not
+  decrypt) plus an HMAC-SHA256 blind index for lookups (normalized: trim, NFC,
+  lower-case). A database dump alone does not reveal member e-mails; the keys
+  live only in the api service variables (lose them = lose the e-mails).
+- **Key rotation**: `MEMBER_DATA_KEY="2:<new>,1:<old>"` — new rows use the
+  first key, every listed key still decrypts; rows keep their key id.
+  `MEMBER_INDEX_KEY` cannot change without recomputing every index.
+- **Passwords**: argon2id (m=19456 KiB, t=2, p=1) PHC strings; parameters are
+  read from the hash and bounded; at most 4 hashes run at once; unknown e-mails
+  spend a dummy verification; 10–128 characters, not in the embedded common
+  password list (`internal/vault/common_passwords.txt`), not equal to the
+  e-mail / its local part / the display name.
+- **Tokens** (sessions, verify/reset/change/link, OAuth state + browser
+  binding) are 32 random bytes; only SHA-256 is stored. Token payloads (new
+  e-mail, Google link data) and the PKCE verifier are encrypted with an AAD
+  bound to the row.
+- **Google**: authorization code + PKCE S256 + state (single use, 10 min,
+  bound to the `escoma_oauth` cookie) + nonce; the ID token is verified by
+  go-oidc (JWKS signature, `iss`, `aud`, `exp`) and `email_verified` must be
+  true. Google subjects are stored only as HMAC.
+- **Logs** never contain member e-mails, tokens, passwords, Google subjects or
+  ID tokens (member ids only). The access log keeps its usual client IP line.
+- **Abuse controls**: per-IP / per-member / per-e-mail rate limits
+  (in-process), honeypots, minimum compose time, link limit, duplicate check,
+  first-comment hold, report threshold, optional Cloudflare Turnstile.
+
+### Local Google sign-in with the stub provider (development only)
+
+`cmd/oidcstub` is a tiny OpenID Connect provider for local testing and E2E.
+It generates an RSA key at start and serves discovery + JWKS, an `/authorize`
+form (any e-mail/name, choose `email_verified`, optional picture claim) and a
+`/token` endpoint that checks the client secret and the PKCE verifier and
+signs an RS256 ID token (`sub` = stable hash of the e-mail). It is a separate
+binary and is never wired into `serve`.
+
+```bash
+go run ./cmd/oidcstub        # http://127.0.0.1:18090  (flags: -addr, -issuer, -client-id, -client-secret)
+# api in another shell (APP_ENV must NOT be production; non-https issuers are rejected there):
+OIDC_ISSUER_URL=http://127.0.0.1:18090 GOOGLE_CLIENT_ID=stub-client GOOGLE_CLIENT_SECRET=stub-secret \
+WEB_BASE_URL=http://localhost:3000 go run ./cmd/server
+```
+
+Then click "Sign in with Google" on the web (it goes through the web proxy at
+`/api/community/auth/google/start`). For automated E2E, append
+`&auto_email=user@example.com&auto_name=Test%20User` (optional
+`&auto_verified=false`, `&auto_picture=1`) to the stub `/authorize` URL the API
+redirects to; the stub then redirects straight back with a code. With the
+issuer overridden outside production, avatar downloads from the stub's own
+host are allowed as well.
+
 ## Notifications
 
 On every stored lead the API notifies all configured channels asynchronously:
@@ -607,6 +828,18 @@ See `.env.example` for the annotated file.
 | `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_TO` | empty | LINE push notifier |
 | `WEB_REVALIDATE_URL` / `REVALIDATE_SECRET` | empty | Next.js revalidation webhook |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` / `ADMIN_RESET_PASSWORD` | empty / empty / `Admin` / `false` | admin bootstrap |
+| `MEMBER_DATA_KEY` | — (**required in production**) | AES-256-GCM key(s) for member e-mails / token payloads: one base64 32-byte key (id 1) or `id:base64[,id:base64…]` (first = primary). Unset outside production = random per boot (WARN; data unreadable after a restart) |
+| `MEMBER_INDEX_KEY` | — (**required in production**) | base64 32-byte HMAC key for blind indexes (e-mail lookup, Google subject). Keep it stable |
+| `MEMBER_SESSION_TTL` | `720h` | member session lifetime (1h–2160h) |
+| `MEMBER_REQUIRE_VERIFIED_EMAIL` | `true` when an e-mail transport **and** `WEB_BASE_URL` are set, else `false` | gate comments/likes/reports/uploads on a verified e-mail; `true` without a transport is a config error |
+| `MEMBER_HOLD_FIRST_COMMENT` | `true` | hold a new member's first comment for review (see comment rules) |
+| `MEMBER_REGISTER_RATE_LIMIT` | `5/1h` | registrations per IP |
+| `MEMBER_LOGIN_RATE_LIMIT` | `10/15m` | member logins per IP and per e-mail |
+| `COMMENT_RATE_LIMIT` / `COMMENT_IP_RATE_LIMIT` | `6/1m` / `30/10m` | new comments per member / per IP |
+| `COMMENT_IMAGE_MAX_MB` / `AVATAR_MAX_MB` | `5` / `5` | upload limits (1–20) |
+| `TURNSTILE_SECRET` | empty (off) | Cloudflare Turnstile secret: token required on register, and on login after 3 failures per IP |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty (Google sign-in off) | both or neither; needs `WEB_BASE_URL` (redirect URI `${WEB_BASE_URL}/api/community/auth/google/callback`) |
+| `OIDC_ISSUER_URL` | `https://accounts.google.com` | override **only** for the local stub (`cmd/oidcstub`); any override, and any non-https value, is rejected in production |
 
 ## Database schema (migrations/)
 
@@ -635,4 +868,29 @@ See `.env.example` for the annotated file.
   source_page, ip inet, user_agent, timestamps, deleted_at; indexes
   `(created_at DESC)` and `(status)` partial on `deleted_at IS NULL`)
 - `goose_db_version` (goose)
+- 00005 (community, additive; Down drops exactly these tables):
+  - `members` (id, display_name 2–40, email_ciphertext + email_key_id,
+    email_index **unique** (blind index), email_verified_at, password_hash
+    argon2id or NULL = Google-only, password_changed_at, role CHECK
+    `member|trusted|moderator|banned`, avatar_key, terms_version, consented_at,
+    last_login_at, banned_at, banned_reason, timestamps)
+  - `member_identities` (provider `google|line`, subject_hash; unique
+    `(provider, subject_hash)` and `(member_id, provider)`)
+  - `member_sessions` (token_hash unique, csrf_token, ip, user_agent,
+    expires_at indexed, last_seen_at), `member_tokens` (purpose
+    `verify_email|reset_password|change_email|link_google`, token_hash unique,
+    encrypted payload, expires_at, used_at), `oauth_states` (state_hash PK,
+    binding_hash, nonce, encrypted PKCE verifier, next_path, consent_version,
+    expires_at)
+  - `comments` (post_id FK cascade, parent_id → top-level comment, reply_to_id
+    SET NULL, member_id SET NULL (= deleted account), body ≤ 2000, status
+    `pending|published|hidden|deleted`, content_hash, like_count,
+    report_count, edited_at, deleted_at, moderated_at / by_admin / by_member),
+    `comment_edits`, `comment_images` (member_id cascade, comment_id unique SET
+    NULL, storage_key unique), `comment_reports` / `comment_likes` (PK
+    `(comment_id, member_id)`), `post_likes` (PK `(post_id, member_id)`)
+  - `post_stats` (post_id PK: view_count, like_count, comment_count —
+    maintained in the same transaction as the change; `comment_count` =
+    published comments incl. replies), `view_salts` (day PK),
+    `post_view_dedupe` (PK `(day, post_id, visitor_hash)`)
 - trigger `set_updated_at()` on every table with `updated_at`

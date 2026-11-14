@@ -22,11 +22,12 @@ const PER_PAGE = 50;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function actionTone(action: string): BadgeTone {
-  if (/failed|delete|revoke|deactivate/.test(action)) return "danger";
+  if (/failed|delete|revoke|deactivate|\.ban$|hide/.test(action)) return "danger";
   if (/^auth\./.test(action)) return "neutral";
   if (/^user\./.test(action)) return "violet";
   if (/^lead\./.test(action)) return "success";
   if (/^(post|media)\./.test(action)) return "info";
+  if (/^(comment|member)\./.test(action)) return "warning";
   return "neutral";
 }
 
@@ -38,6 +39,8 @@ const TARGET_LABEL: Record<string, string> = {
   invite: "คำเชิญ",
   session: "เซสชัน",
   redirect: "Redirect",
+  comment: "ความคิดเห็น",
+  member: "สมาชิก",
 };
 
 export function AuditPage() {

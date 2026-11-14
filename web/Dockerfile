@@ -20,8 +20,11 @@ WORKDIR /app
 # Inlined into the client bundle / next.config at build time.
 ARG NEXT_PUBLIC_SITE_URL=https://www.ecomacrobiz.com
 ARG NEXT_PUBLIC_MEDIA_ORIGIN=
+# Optional Cloudflare Turnstile site key for member registration (empty = off).
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
     NEXT_PUBLIC_MEDIA_ORIGIN=${NEXT_PUBLIC_MEDIA_ORIGIN} \
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY} \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules

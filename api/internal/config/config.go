@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ecomacrobiz/escoma/api/internal/vault"
 )
 
 type RateLimit struct {
@@ -81,7 +83,55 @@ type Config struct {
 
 	MigrateOnStart  bool
 	ShutdownTimeout time.Duration
+
+	Members MemberConfig
 }
+
+// MemberConfig: community members, Google sign-in and comments.
+type MemberConfig struct {
+	// DataKey / IndexKey: raw MEMBER_DATA_KEY / MEMBER_INDEX_KEY (validated
+	// here, parsed by vault). Empty outside production = ephemeral keys.
+	DataKey  string
+	IndexKey string
+
+	SessionTTL time.Duration
+	// RequireVerifiedEmail gates comments/likes/reports/uploads.
+	RequireVerifiedEmail bool
+	HoldFirstComment     bool
+
+	RegisterRateLimit  RateLimit
+	LoginRateLimit     RateLimit
+	CommentRateLimit   RateLimit
+	CommentIPRateLimit RateLimit
+
+	CommentImageMaxBytes int64
+	AvatarMaxBytes       int64
+
+	TurnstileSecret string
+
+	GoogleClientID     string
+	GoogleClientSecret string
+	OIDCIssuerURL      string
+}
+
+// DefaultOIDCIssuer is Google's issuer; OIDC_ISSUER_URL overrides it only
+// for the local stub provider (cmd/oidcstub).
+const DefaultOIDCIssuer = "https://accounts.google.com"
+
+func (m MemberConfig) GoogleEnabled() bool { return m.GoogleClientID != "" }
+
+// IssuerOverridden reports whether OIDC_ISSUER_URL points somewhere else
+// than Google (only allowed outside production).
+func (m MemberConfig) IssuerOverridden() bool { return m.OIDCIssuerURL != DefaultOIDCIssuer }
+
+// GoogleRedirectURL is the OAuth redirect URI registered at Google.
+func (c *Config) GoogleRedirectURL() string {
+	return c.WebBaseURL + "/api/community/auth/google/callback"
+}
+
+// MemberMailEnabled: member verification/reset e-mails need a transport and
+// WEB_BASE_URL (to build the links).
+func (c *Config) MemberMailEnabled() bool { return c.EmailProvider() != "" && c.WebBaseURL != "" }
 
 const MinPasswordLen = 12
 
@@ -132,6 +182,23 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		AdminResetPassword:     e.bool("ADMIN_RESET_PASSWORD", false),
 		MigrateOnStart:         e.bool("MIGRATE_ON_START", false),
 		ShutdownTimeout:        e.duration("SHUTDOWN_TIMEOUT", 20*time.Second),
+	}
+	c.Members = MemberConfig{
+		DataKey:              e.raw("MEMBER_DATA_KEY"),
+		IndexKey:             e.raw("MEMBER_INDEX_KEY"),
+		SessionTTL:           e.duration("MEMBER_SESSION_TTL", 720*time.Hour),
+		RequireVerifiedEmail: e.bool("MEMBER_REQUIRE_VERIFIED_EMAIL", c.MemberMailEnabled()),
+		HoldFirstComment:     e.bool("MEMBER_HOLD_FIRST_COMMENT", true),
+		RegisterRateLimit:    e.rate("MEMBER_REGISTER_RATE_LIMIT", RateLimit{5, time.Hour}),
+		LoginRateLimit:       e.rate("MEMBER_LOGIN_RATE_LIMIT", RateLimit{10, 15 * time.Minute}),
+		CommentRateLimit:     e.rate("COMMENT_RATE_LIMIT", RateLimit{6, time.Minute}),
+		CommentIPRateLimit:   e.rate("COMMENT_IP_RATE_LIMIT", RateLimit{30, 10 * time.Minute}),
+		CommentImageMaxBytes: int64(e.int("COMMENT_IMAGE_MAX_MB", 5)) << 20,
+		AvatarMaxBytes:       int64(e.int("AVATAR_MAX_MB", 5)) << 20,
+		TurnstileSecret:      e.str("TURNSTILE_SECRET", ""),
+		GoogleClientID:       e.str("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:   e.str("GOOGLE_CLIENT_SECRET", ""),
+		OIDCIssuerURL:        strings.TrimRight(e.str("OIDC_ISSUER_URL", DefaultOIDCIssuer), "/"),
 	}
 	lvl := e.str("LOG_LEVEL", "info")
 	if err := c.LogLevel.UnmarshalText([]byte(lvl)); err != nil {
@@ -216,6 +283,7 @@ func (c *Config) validate(e *envReader) {
 	if (c.AdminEmail == "") != (c.AdminPassword == "") {
 		e.fail("ADMIN_EMAIL", "ADMIN_EMAIL and ADMIN_PASSWORD must be set together")
 	}
+	c.validateMembers(e)
 	if c.IsProduction() {
 		if !c.CookieSecure {
 			e.fail("COOKIE_SECURE", "must be true in production")
@@ -223,6 +291,51 @@ func (c *Config) validate(e *envReader) {
 		if len(c.CORSAllowedOrigins) == 0 {
 			e.fail("CORS_ALLOWED_ORIGINS", "required in production")
 		}
+	}
+}
+
+func (c *Config) validateMembers(e *envReader) {
+	m := &c.Members
+	if m.DataKey != "" {
+		if _, err := vault.ParseKeyring(m.DataKey); err != nil {
+			e.fail("MEMBER_DATA_KEY", err.Error()+` (one base64 32-byte key, or "id:base64,id:base64")`)
+		}
+	} else if c.IsProduction() {
+		e.fail("MEMBER_DATA_KEY", "required in production (base64 of 32 random bytes)")
+	}
+	if m.IndexKey != "" {
+		if _, err := vault.ParseIndexKey(m.IndexKey); err != nil {
+			e.fail("MEMBER_INDEX_KEY", err.Error())
+		}
+	} else if c.IsProduction() {
+		e.fail("MEMBER_INDEX_KEY", "required in production (base64 of 32 random bytes)")
+	}
+	if m.SessionTTL < time.Hour || m.SessionTTL > 2160*time.Hour {
+		e.fail("MEMBER_SESSION_TTL", "must be between 1h and 2160h")
+	}
+	if m.RequireVerifiedEmail && !c.MemberMailEnabled() {
+		e.fail("MEMBER_REQUIRE_VERIFIED_EMAIL", "true needs an e-mail transport (RESEND_API_KEY or SMTP_*) and WEB_BASE_URL")
+	}
+	if m.CommentImageMaxBytes <= 0 || m.CommentImageMaxBytes > 20<<20 {
+		e.fail("COMMENT_IMAGE_MAX_MB", "must be 1-20")
+	}
+	if m.AvatarMaxBytes <= 0 || m.AvatarMaxBytes > 20<<20 {
+		e.fail("AVATAR_MAX_MB", "must be 1-20")
+	}
+	if (m.GoogleClientID == "") != (m.GoogleClientSecret == "") {
+		e.fail("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together")
+	}
+	if m.GoogleClientID != "" && c.WebBaseURL == "" {
+		e.fail("GOOGLE_CLIENT_ID", "Google sign-in needs WEB_BASE_URL (the redirect URI is derived from it)")
+	}
+	u, err := url.Parse(m.OIDCIssuerURL)
+	switch {
+	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.RawQuery != "" || u.Fragment != "":
+		e.fail("OIDC_ISSUER_URL", "must be an absolute URL such as https://accounts.google.com")
+	case u.Scheme != "https" && c.IsProduction():
+		e.fail("OIDC_ISSUER_URL", "must be https in production")
+	case m.IssuerOverridden() && c.IsProduction():
+		e.fail("OIDC_ISSUER_URL", "may only be overridden outside production (local stub provider)")
 	}
 }
 

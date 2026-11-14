@@ -8,6 +8,7 @@ import { knowledgePage } from "@/content/knowledge";
 import { getAllPostSlugs, getPost, getRelatedPosts, normalizeSlug } from "@/lib/posts";
 import { JsonLd, absUrl, blogPostingJsonLd, breadcrumbJsonLd } from "@/lib/seo/jsonld";
 import { postShareImage } from "@/lib/seo/og";
+import { getComments, getStats } from "@/lib/community/server";
 import { Markdown, extractHeadings } from "@/components/content/Markdown";
 import { PageCta } from "@/components/pages/shared/PageCta";
 import { PostCard } from "@/components/knowledge/PostCard";
@@ -16,7 +17,11 @@ import { ShareButtons } from "@/components/knowledge/ShareButtons";
 import { TableOfContents } from "@/components/knowledge/TableOfContents";
 import { ArticleCover, ArticleHeader } from "@/components/knowledge/ArticleParts";
 import { categoryHref, postHref } from "@/components/knowledge/format";
+import { StatsBarView } from "@/components/community/engagement/StatsViews";
+import { CommentsIsland, StatsIsland } from "@/components/community/engagement/Islands";
+import { CommentsStatic } from "@/components/community/comments/CommentsStatic";
 import "@/components/knowledge/knowledge.css";
+import "@/components/community/comments/comments.css";
 
 type Params = Promise<{ slug: string }>;
 
@@ -84,7 +89,10 @@ async function Article({ params }: { params: Params }) {
   if (!post) notFound();
   if (post.slug !== key) permanentRedirect(postHref(post.slug));
 
-  const related = await getRelatedPosts(post, 3);
+  const [related, comments] = await Promise.all([getRelatedPosts(post, 3), getComments(post.slug)]);
+  const stats = await getStats([post.slug, ...related.map((p) => p.slug)]);
+  const postStats = stats.bySlug[post.slug];
+  const commentCount = stats.live ? postStats.comments : comments.meta.comment_count;
   const headings = extractHeadings(post.bodyMarkdown);
   const showToc = headings.length >= 3;
   const path = postHref(post.slug);
@@ -110,6 +118,14 @@ async function Article({ params }: { params: Params }) {
             dateModified: post.updatedAt,
             author: post.author,
             section: primary?.name,
+            engagement:
+              stats.live || comments.live
+                ? {
+                    stats: stats.live ? postStats : null,
+                    commentCount,
+                    comments: comments.comments,
+                  }
+                : undefined,
           }),
         ]}
       />
@@ -117,6 +133,12 @@ async function Article({ params }: { params: Params }) {
 
       <article aria-labelledby="article-title" className="kn-article">
         <ArticleHeader post={post} />
+
+        <div className="container-page mt-6">
+          <StatsIsland slug={post.slug} stats={postStats}>
+            <StatsBarView stats={postStats} />
+          </StatsIsland>
+        </div>
 
         <ArticleCover cover={post.cover} />
 
@@ -151,6 +173,16 @@ async function Article({ params }: { params: Params }) {
         </div>
       </article>
 
+      <div className="container-page border-t border-line py-[clamp(3.5rem,9vh,6rem)]">
+        <div className={showToc ? "lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-16 xl:grid-cols-[minmax(0,1fr)_18rem]" : ""}>
+          <div className={`min-w-0 ${showToc ? "max-w-3xl" : "mx-auto w-full max-w-[68ch]"}`}>
+            <CommentsIsland slug={post.slug}>
+              <CommentsStatic data={comments} count={commentCount} />
+            </CommentsIsland>
+          </div>
+        </div>
+      </div>
+
       {related.length > 0 && (
         <section aria-labelledby="related-title" className="container-page border-t border-line py-[clamp(4rem,12vh,8rem)]">
           <p className="eyebrow mb-4">KEEP READING</p>
@@ -160,7 +192,7 @@ async function Article({ params }: { params: Params }) {
           <ul className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {related.map((p) => (
               <li key={p.slug} className="flex">
-                <PostCard post={p} />
+                <PostCard post={p} stats={stats.bySlug[p.slug]} />
               </li>
             ))}
           </ul>

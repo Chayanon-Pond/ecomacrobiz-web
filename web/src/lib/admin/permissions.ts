@@ -18,7 +18,8 @@ export type Permission =
   | "users:read"
   | "users:manage"
   | "audit:read"
-  | "settings:manage";
+  | "settings:manage"
+  | "comments:moderate";
 
 export const ROLES: Role[] = ["owner", "editor", "sales", "viewer"];
 
@@ -31,7 +32,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export const ROLE_DESCRIPTION: Record<Role, string> = {
   owner: "จัดการได้ทุกส่วน รวมถึงผู้ใช้ บันทึกกิจกรรม และการตั้งค่า",
-  editor: "เขียน แก้ไข เผยแพร่บทความ และจัดการคลังสื่อ",
+  editor: "เขียน แก้ไข เผยแพร่บทความ จัดการคลังสื่อ และดูแลความคิดเห็น",
   sales: "ดูและจัดการรายชื่อผู้ติดต่อ (Leads) รวมถึงส่งออก CSV",
   viewer: "ดูข้อมูลบทความ คลังสื่อ และ Leads ได้อย่างเดียว",
 };
@@ -50,8 +51,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "users:manage",
     "audit:read",
     "settings:manage",
+    "comments:moderate",
   ],
-  editor: ["posts:read", "posts:write", "posts:publish", "media:read", "media:write"],
+  editor: ["posts:read", "posts:write", "posts:publish", "media:read", "media:write", "comments:moderate"],
   sales: ["leads:read", "leads:write", "leads:export"],
   viewer: ["posts:read", "media:read", "leads:read"],
 };
@@ -100,4 +102,11 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "redirect.create": "สร้าง Redirect",
   "redirect.update": "แก้ไข Redirect",
   "redirect.delete": "ลบ Redirect",
+  "comment.approve": "อนุมัติความคิดเห็น",
+  "comment.hide": "ซ่อนความคิดเห็น",
+  "comment.delete": "ลบความคิดเห็น",
+  "member.role_change": "เปลี่ยนบทบาทสมาชิก",
+  "member.ban": "ระงับสมาชิก",
+  "member.unban": "ยกเลิกการระงับสมาชิก",
+  "member.hide_comments": "ซ่อนความคิดเห็นทั้งหมดของสมาชิก",
 };

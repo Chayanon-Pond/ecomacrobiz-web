@@ -17,8 +17,9 @@ import { invalidateRedirects } from "@/lib/seo/redirects";
 
 const MAX_BODY_BYTES = 8 * 1024;
 const MAX_TAGS = 50;
-// "posts", "redirects" or "post:<slug>" (slug may be Thai; no whitespace; tag limit 256).
-const TAG_RE = /^(?:posts|redirects|post:[^\s]{1,250})$/u;
+// "posts", "redirects", "post-stats", "post:<slug>" or "comments:<slug>"
+// (slug may be Thai; no whitespace; tag limit 256).
+const TAG_RE = /^(?:posts|redirects|post-stats|post:[^\s]{1,250}|comments:[^\s]{1,246})$/u;
 
 function json(status: number, body: unknown) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -63,7 +64,11 @@ export async function POST(request: Request) {
     tags.length > MAX_TAGS ||
     !tags.every((t): t is string => typeof t === "string" && TAG_RE.test(t.normalize("NFC")))
   ) {
-    return error(400, "validation_failed", 'tags ต้องเป็นอาร์เรย์ของ "posts", "redirects" หรือ "post:<slug>"');
+    return error(
+      400,
+      "validation_failed",
+      'tags ต้องเป็นอาร์เรย์ของ "posts", "redirects", "post-stats", "post:<slug>" หรือ "comments:<slug>"',
+    );
   }
 
   const unique = Array.from(new Set(tags.map((t) => t.normalize("NFC"))));

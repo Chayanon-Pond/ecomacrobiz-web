@@ -34,6 +34,7 @@ type Store struct {
 	tokens     []domain.UserToken
 	audit      []domain.AuditEntry
 	redirects  []domain.Redirect
+	community  communityTables
 	touches    int
 	Now        func() time.Time
 }

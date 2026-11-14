@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	"github.com/ecomacrobiz/escoma/api/internal/seed"
 	"github.com/ecomacrobiz/escoma/api/internal/service"
 	"github.com/ecomacrobiz/escoma/api/internal/storage"
+	"github.com/ecomacrobiz/escoma/api/internal/vault"
 	"github.com/ecomacrobiz/escoma/api/migrations"
 )
 
@@ -252,6 +254,60 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		defer l.Stop()
 	}
 
+	crypto, err := memberCrypto(cfg, log)
+	if err != nil {
+		return err
+	}
+	mc := cfg.Members
+	var human service.HumanVerifier
+	if mc.TurnstileSecret != "" {
+		human = service.NewTurnstile(mc.TurnstileSecret, log)
+	}
+	members := service.NewMemberService(store.Members, store.MemberSessions, store.MemberTokens, store.Comments, crypto,
+		media, mailer, human, revalidator, audit, service.MemberServiceConfig{SessionTTL: mc.SessionTTL,
+			WebBaseURL: cfg.WebBaseURL, MailEnabled: cfg.MemberMailEnabled(), RequireVerified: mc.RequireVerifiedEmail,
+			AvatarMaxBytes: mc.AvatarMaxBytes}, log)
+	commentCfg := service.CommentServiceConfig{HoldFirstComment: mc.HoldFirstComment,
+		RequireVerified: mc.RequireVerifiedEmail, ImageMaxBytes: mc.CommentImageMaxBytes}
+	comments := service.NewCommentService(store.Comments, store.Posts, store.Members, store.Engagement, media,
+		revalidator, audit, commentCfg, log)
+	engagement := service.NewEngagementService(store.Engagement, store.Posts, commentCfg, log)
+	var google *service.GoogleService
+	if mc.GoogleEnabled() {
+		google = service.NewGoogleService(
+			service.NewGoogleOIDC(mc.OIDCIssuerURL, mc.GoogleClientID, mc.GoogleClientSecret, cfg.GoogleRedirectURL()),
+			store.OAuthStates, store.Members, store.MemberTokens, members,
+			service.GoogleServiceConfig{WebBaseURL: cfg.WebBaseURL, AvatarHostAllowed: avatarHosts(cfg)}, log)
+		log.Info("google sign-in enabled", "issuer", mc.OIDCIssuerURL, "redirect_uri", cfg.GoogleRedirectURL())
+	} else {
+		log.Info("google sign-in disabled (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET unset)")
+	}
+	log.Info("community", "require_verified_email", mc.RequireVerifiedEmail, "hold_first_comment", mc.HoldFirstComment,
+		"member_mail", members.MailEnabled(), "turnstile", human != nil, "data_key_ids", crypto.Keys.KeyIDs())
+	rl := func(r config.RateLimit) *ratelimit.Limiter { return ratelimit.New(r.Events, r.Per) }
+	limits := handlers.CommunityLimiters{
+		Register:    rl(mc.RegisterRateLimit),
+		LoginIP:     rl(mc.LoginRateLimit),
+		LoginEmail:  rl(mc.LoginRateLimit),
+		Token:       ratelimit.New(20, 10*time.Minute),
+		Forgot:      ratelimit.New(5, time.Hour),
+		Resend:      ratelimit.New(3, time.Hour),
+		GoogleStart: ratelimit.New(20, 10*time.Minute),
+		GoogleLink:  ratelimit.New(10, 15*time.Minute),
+		Avatar:      ratelimit.New(10, time.Hour),
+		Password:    ratelimit.New(5, 15*time.Minute),
+		Views:       ratelimit.New(60, 10*time.Minute),
+		Likes:       ratelimit.New(60, time.Minute),
+		Comment:     rl(mc.CommentRateLimit),
+		CommentIP:   rl(mc.CommentIPRateLimit),
+		Report:      ratelimit.New(20, time.Hour),
+		Upload:      ratelimit.New(10, time.Hour),
+	}
+	for _, l := range limits.All() {
+		l.StartJanitor(time.Minute)
+		defer l.Stop()
+	}
+
 	router, err := handlers.NewRouter(handlers.Deps{
 		Config:            cfg,
 		Log:               log,
@@ -271,6 +327,11 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Users:             users,
 		Account:           service.NewAccountService(store.AdminUsers, store.Sessions, auth, audit, log),
 		Audit:             audit,
+		Members:           members,
+		Google:            google,
+		Comments:          comments,
+		Engagement:        engagement,
+		CommunityLimits:   limits,
 	})
 	if err != nil {
 		return err
@@ -289,6 +350,16 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}()
 	defer func() { stopScheduler(); <-schedDone }()
 	log.Info("post scheduler started", "interval", cfg.SchedulerInterval.String())
+
+	// Community purge (expired member sessions/tokens/OAuth states, old view
+	// salts, unattached comment images): now, then hourly.
+	janitor := service.NewCommunityJanitor(store.Engagement, store.Comments, media, log)
+	janitorDone := make(chan struct{})
+	go func() {
+		defer close(janitorDone)
+		janitor.Run(schedCtx, time.Hour)
+	}()
+	defer func() { stopScheduler(); <-janitorDone }()
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
@@ -322,12 +393,62 @@ func serve(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	stopScheduler()
 	<-schedDone
+	<-janitorDone
 	dispatcher.Wait(shutdownCtx)
+	members.Wait(shutdownCtx)
 	mailer.Wait(shutdownCtx)
 	revalidator.Wait(shutdownCtx)
 	indexNow.Wait(shutdownCtx)
 	log.Info("shutdown complete")
 	return nil
+}
+
+// memberCrypto builds the member keyring, blind index and password hasher.
+// Outside production missing keys are generated per boot (config already
+// rejects that in production).
+func memberCrypto(cfg *config.Config, log *slog.Logger) (service.MemberCrypto, error) {
+	mc := cfg.Members
+	var (
+		keys  *vault.Keyring
+		index *vault.Index
+		err   error
+	)
+	if mc.DataKey != "" {
+		if keys, err = vault.ParseKeyring(mc.DataKey); err != nil {
+			return service.MemberCrypto{}, fmt.Errorf("MEMBER_DATA_KEY: %w", err)
+		}
+	} else {
+		log.Warn("MEMBER_DATA_KEY unset: using a random key for this process; member e-mails become unreadable after a restart")
+		if keys, err = vault.NewKeyring([]int16{1}, map[int16][]byte{1: vault.RandomKey()}); err != nil {
+			return service.MemberCrypto{}, err
+		}
+	}
+	if mc.IndexKey != "" {
+		if index, err = vault.ParseIndexKey(mc.IndexKey); err != nil {
+			return service.MemberCrypto{}, fmt.Errorf("MEMBER_INDEX_KEY: %w", err)
+		}
+	} else {
+		log.Warn("MEMBER_INDEX_KEY unset: using a random key for this process; members cannot sign in after a restart")
+		index = vault.NewIndex(vault.RandomKey())
+	}
+	return service.MemberCrypto{Keys: keys, Index: index, Hasher: vault.NewHasher(vault.DefaultArgon2)}, nil
+}
+
+// avatarHosts: Google profile pictures, plus the stub issuer's host when
+// OIDC_ISSUER_URL is overridden outside production.
+func avatarHosts(cfg *config.Config) func(*url.URL) bool {
+	stubHost := ""
+	if cfg.Members.IssuerOverridden() && !cfg.IsProduction() {
+		if u, err := url.Parse(cfg.Members.OIDCIssuerURL); err == nil {
+			stubHost = u.Host
+		}
+	}
+	return func(u *url.URL) bool {
+		if service.GoogleAvatarHost(u) {
+			return true
+		}
+		return stubHost != "" && u.Host == stubHost && (u.Scheme == "http" || u.Scheme == "https")
+	}
 }
 
 func sessionJanitor(ctx context.Context, auth *service.AuthService, log *slog.Logger) {

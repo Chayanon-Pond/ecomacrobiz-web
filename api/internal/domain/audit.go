@@ -42,6 +42,14 @@ const (
 	AuditRedirectCreate = "redirect.create"
 	AuditRedirectUpdate = "redirect.update"
 	AuditRedirectDelete = "redirect.delete"
+
+	AuditCommentApprove     = "comment.approve"
+	AuditCommentHide        = "comment.hide"
+	AuditCommentDelete      = "comment.delete"
+	AuditMemberRoleChange   = "member.role_change"
+	AuditMemberBan          = "member.ban"
+	AuditMemberUnban        = "member.unban"
+	AuditMemberHideComments = "member.hide_comments"
 )
 
 // Audit target types.
@@ -52,6 +60,8 @@ const (
 	TargetMedia    = "media"
 	TargetLead     = "lead"
 	TargetRedirect = "redirect"
+	TargetComment  = "comment"
+	TargetMember   = "member"
 )
 
 // Actor identifies who performed an action plus request context. A zero

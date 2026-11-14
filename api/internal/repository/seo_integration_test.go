@@ -279,8 +279,10 @@ func TestMigration00004UpDownUp(t *testing.T) {
 	if !exists(hasTable) || !exists(hasCol) {
 		t.Fatal("00004 not applied")
 	}
-	if err := migrations.Run(ctx, db, log, "down"); err != nil {
-		t.Fatalf("down: %v", err)
+	for range 2 { // 00005 (members), then 00004
+		if err := migrations.Run(ctx, db, log, "down"); err != nil {
+			t.Fatalf("down: %v", err)
+		}
 	}
 	if exists(hasTable) || exists(hasCol) {
 		t.Fatal("00004 down left objects behind")
